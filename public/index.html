@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#1d4ed8" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Shop Tracker" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <title>Truck Shop Tracker · Schlep Right</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <div id="auth" class="auth-wrap">
+    <div class="auth-card">
+      <h1>Truck Shop Tracker</h1>
+      <p class="sub">East Hartford shop · managers only</p>
+      <div class="field">
+        <label for="username">First name</label>
+        <input id="username" autocomplete="username" placeholder="e.g. Lloyd" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="Password" />
+      </div>
+      <button id="btn-login" style="width:100%">Sign in</button>
+      <div id="auth-msg"></div>
+      <p class="hint">Use your first name and the shared password. You'll stay signed in on this phone.</p>
+    </div>
+  </div>
+
+  <div id="app" class="app hidden">
+    <div class="topbar">
+      <div>
+        <h1>Truck Shop Tracker</h1>
+        <div class="sub">East Hartford maintenance · Mon–Thu · 2 weeks</div>
+      </div>
+      <div class="userpill">
+        <span id="who"></span>
+        <button id="btn-logout" class="secondary" style="padding:4px 10px;font-size:.75rem">Sign out</button>
+      </div>
+    </div>
+
+    <div id="test-banner" class="test-banner hidden">TEST DATA — sample schedule cards for demo</div>
+
+    <div class="panel">
+      <strong>Add to schedule</strong>
+      <div class="row" style="margin-top:8px">
+        <div class="grow combobox-wrap">
+          <label for="add-truck-input">Truck</label>
+          <input id="add-truck-input" autocomplete="off" placeholder="Type truck number…" />
+          <input type="hidden" id="add-truck" />
+          <div id="add-truck-menu" class="combo-menu hidden"></div>
+        </div>
+        <div>
+          <label for="add-date">Drop-off day (Mon–Thu)</label>
+          <input id="add-date" type="date" />
+        </div>
+        <button id="btn-add">Add</button>
+      </div>
+      <div id="add-msg" class="err"></div>
+    </div>
+
+    <div class="weeknav">
+      <button id="btn-prev" class="secondary">← Prev</button>
+      <div class="range" id="range-label"></div>
+      <button id="btn-next" class="secondary">Next →</button>
+    </div>
+    <div class="legend">
+      <span class="s1">Scheduled</span>
+      <span class="s2">Dropped off</span>
+      <span class="s3">Completed</span>
+      <span class="s4">Picked up</span>
+    </div>
+
+    <div id="board"></div>
+
+    <div class="panel">
+      <strong>Truck location</strong>
+      <div class="row" style="margin-top:8px">
+        <div class="grow">
+          <label for="lookup-truck">Truck number</label>
+          <input id="lookup-truck" list="truck-list" placeholder="e.g. 205273" />
+        </div>
+        <button id="btn-lookup">Find</button>
+      </div>
+      <div id="lookup-out"></div>
+    </div>
+
+  </div>
+
+  <div id="modal" class="modal-backdrop hidden">
+    <div class="modal" role="dialog" aria-modal="true">
+      <h2 id="m-title"></h2>
+      <div class="sub" id="m-sub"></div>
+      <div class="field">
+        <label for="m-date">Move to day</label>
+        <input id="m-date" type="date" />
+      </div>
+      <div class="actions">
+        <button id="m-save">Save day</button>
+        <button id="m-delete" class="danger">Delete</button>
+        <button id="m-close" class="secondary">Close</button>
+      </div>
+      <h3 style="font-size:.9rem;margin:16px 0 0">Notes</h3>
+      <ul id="m-notes" class="audit-list"></ul>
+      <div class="field">
+        <label for="m-note-input">Add note</label>
+        <input id="m-note-input" placeholder="Type a note…" />
+        <button id="m-note-add" class="secondary" style="margin-top:6px;width:100%">Add note</button>
+      </div>
+      <h3 style="font-size:.9rem;margin:16px 0 0">History</h3>
+      <ul id="m-audit" class="audit-list"></ul>
+    </div>
+  </div>
+
+  <datalist id="truck-list"></datalist>
+  <script src="/assets/app.js"></script>
+</body>
+</html>
