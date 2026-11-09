@@ -1,6 +1,6 @@
 # Truck Shop Tracker
 
-Schlep Right East Hartford / East Windsor shop schedule (Mon–Thu, two-week calendar).
+Schlep Right East Windsor shop schedule (Mon–Thu, two-week calendar).
 
 ## Stack
 
