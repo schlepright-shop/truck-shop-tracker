@@ -1,0 +1,291 @@
+{
+  "trucks": [
+    {
+      "unit": "427985",
+      "station": "SW"
+    },
+    {
+      "unit": "437099",
+      "station": "SW"
+    },
+    {
+      "unit": "465485",
+      "station": "SW"
+    },
+    {
+      "unit": "727407",
+      "station": "SW"
+    },
+    {
+      "unit": "727409",
+      "station": "SW"
+    },
+    {
+      "unit": "727411",
+      "station": "SW"
+    },
+    {
+      "unit": "411087",
+      "station": "SW"
+    },
+    {
+      "unit": "468758",
+      "station": "SW"
+    },
+    {
+      "unit": "468760",
+      "station": "SW"
+    },
+    {
+      "unit": "468762",
+      "station": "SW"
+    },
+    {
+      "unit": "468899",
+      "station": "SW"
+    },
+    {
+      "unit": "476260",
+      "station": "SW"
+    },
+    {
+      "unit": "478658",
+      "station": "SW"
+    },
+    {
+      "unit": "479464",
+      "station": "SW"
+    },
+    {
+      "unit": "479466",
+      "station": "SW"
+    },
+    {
+      "unit": "504692",
+      "station": "SW"
+    },
+    {
+      "unit": "530639",
+      "station": "SW"
+    },
+    {
+      "unit": "322628",
+      "station": "SW"
+    },
+    {
+      "unit": "322821",
+      "station": "SW"
+    },
+    {
+      "unit": "513115",
+      "station": "SW"
+    },
+    {
+      "unit": "477572",
+      "station": "SW"
+    },
+    {
+      "unit": "511348",
+      "station": "SW"
+    },
+    {
+      "unit": "532040",
+      "station": "SW"
+    },
+    {
+      "unit": "205273",
+      "station": "SW"
+    },
+    {
+      "unit": "203226",
+      "station": "SW"
+    },
+    {
+      "unit": "501769",
+      "station": "SW"
+    },
+    {
+      "unit": "434979",
+      "station": "SW"
+    },
+    {
+      "unit": "445358",
+      "station": "Wall"
+    },
+    {
+      "unit": "460067",
+      "station": "Wall"
+    },
+    {
+      "unit": "478400",
+      "station": "Wall"
+    },
+    {
+      "unit": "727410",
+      "station": "Wall"
+    },
+    {
+      "unit": "727705",
+      "station": "Wall"
+    },
+    {
+      "unit": "509513",
+      "station": "Wall"
+    },
+    {
+      "unit": "530640",
+      "station": "Wall"
+    },
+    {
+      "unit": "729060",
+      "station": "Wall"
+    },
+    {
+      "unit": "502203",
+      "station": "Wall"
+    },
+    {
+      "unit": "533847",
+      "station": "Wall"
+    },
+    {
+      "unit": "472174",
+      "station": "Wall"
+    },
+    {
+      "unit": "207172",
+      "station": "Wall"
+    },
+    {
+      "unit": "476944",
+      "station": "Wall"
+    },
+    {
+      "unit": "447345",
+      "station": "Wall"
+    },
+    {
+      "unit": "727704",
+      "station": "Wall"
+    },
+    {
+      "unit": "729062",
+      "station": "Wall"
+    },
+    {
+      "unit": "731648",
+      "station": "Wall"
+    },
+    {
+      "unit": "731649",
+      "station": "Wall"
+    },
+    {
+      "unit": "731645",
+      "station": "Wall"
+    },
+    {
+      "unit": "731646",
+      "station": "Wall"
+    },
+    {
+      "unit": "731647",
+      "station": "Wall"
+    },
+    {
+      "unit": "460034",
+      "station": "Win"
+    },
+    {
+      "unit": "460066",
+      "station": "Wall"
+    },
+    {
+      "unit": "728883",
+      "station": "Win"
+    },
+    {
+      "unit": "300719",
+      "station": "Win"
+    },
+    {
+      "unit": "420788",
+      "station": "Win"
+    },
+    {
+      "unit": "421281",
+      "station": "Win"
+    },
+    {
+      "unit": "479465",
+      "station": "Win"
+    },
+    {
+      "unit": "509512",
+      "station": "Win"
+    },
+    {
+      "unit": "729061",
+      "station": "Win"
+    },
+    {
+      "unit": "731650",
+      "station": "Win"
+    },
+    {
+      "unit": "530262",
+      "station": "Win"
+    },
+    {
+      "unit": "532806",
+      "station": "Win"
+    },
+    {
+      "unit": "731644",
+      "station": "Wall"
+    },
+    {
+      "unit": "502447",
+      "station": "Win"
+    },
+    {
+      "unit": "507743",
+      "station": "Win"
+    },
+    {
+      "unit": "449550",
+      "station": "Win"
+    },
+    {
+      "unit": "466671",
+      "station": "Win"
+    }
+  ],
+  "unmapped": [
+    {
+      "unit": "412255",
+      "location": "NOS"
+    },
+    {
+      "unit": "733583",
+      "location": "NOS"
+    },
+    {
+      "unit": "433337",
+      "location": "NOS"
+    },
+    {
+      "unit": "728600",
+      "location": "NOS"
+    },
+    {
+      "unit": "728601",
+      "location": "NOS"
+    }
+  ],
+  "counts": {
+    "SW": 27,
+    "Wall": 23,
+    "Win": 15
+  }
+}
