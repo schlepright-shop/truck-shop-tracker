@@ -225,3 +225,27 @@ label { font-size: .8rem; color: var(--muted); display: block; margin-bottom: 4p
   border: 1px solid rgba(255,255,255,.35); border-radius: 6px; padding: 2px 6px;
   font-size: .75rem; font-weight: 700; cursor: pointer; line-height: 1.2;
 }
+
+/* Stage dropdown: destructive remove option */
+.truck-row .stage-select option.opt-remove { color: #dc2626; font-weight: 700; }
+
+/* Oil change forecast (lloyd/dan only) */
+.oil-panel summary { cursor: pointer; list-style: revert; }
+.oil-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 6px; }
+.oil-table { width: 100%; border-collapse: collapse; font-size: .82rem; white-space: nowrap; }
+.oil-table th, .oil-table td { padding: 6px 6px; border-bottom: 1px solid var(--border); text-align: left; }
+.oil-table th { position: sticky; top: 0; background: #f9fafb; font-size: .75rem; color: var(--muted); }
+.oil-table th.sortable { cursor: pointer; user-select: none; }
+.oil-table th.sorted { color: var(--text); }
+.oil-table td.u { font-weight: 800; }
+.oil-table td.note { white-space: normal; min-width: 140px; color: #92400e; font-size: .75rem; }
+.oil-table .otag { background: #e5e7eb; border-radius: 4px; padding: 1px 5px; font-size: .7rem; font-weight: 700; }
+.oil-table .oil-add { padding: 4px 8px; font-size: .72rem; }
+.oil-table tr.oil-due2 td { background: #fee2e2; }
+.oil-table tr.oil-due8 td { background: #fef3c7; }
+.oil-table tr.oil-nomiles td { color: var(--muted); background: #f9fafb; }
+.oil-legend { display: flex; flex-wrap: wrap; gap: 6px; font-size: .72rem; }
+.oil-legend span { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
+.oil-legend .oil-due2 { background: #fee2e2; }
+.oil-legend .oil-due8 { background: #fef3c7; }
+.oil-legend .oil-nomiles { background: #f9fafb; color: var(--muted); }

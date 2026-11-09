@@ -47,6 +47,7 @@ async function bootstrap() {
     setSignedIn(true);
     await loadTrucks();
     await loadSchedule();
+    await initOilChart();
   } catch (e) {
     setSignedIn(false);
   }
@@ -156,7 +157,7 @@ function renderBoard(data) {
         const ncount = c.notes_count || 0;
         const opts = STAGES.map(s =>
           `<option value="${s}" ${s === c.stage ? "selected" : ""}>${s}</option>`
-        ).join("");
+        ).join("") + `<option value="__remove__" class="opt-remove" style="color:#dc2626">Remove from schedule</option>`;
         el.innerHTML = `
           <div class="row-top">
             <span class="unit">${c.truck_unit}</span>
@@ -169,6 +170,21 @@ function renderBoard(data) {
         sel.addEventListener("change", async () => {
           const stage = sel.value;
           if (stage === c.stage) return;
+          if (stage === "__remove__") {
+            const dd = new Date(c.schedule_date + "T12:00:00");
+            const label = `${dd.toLocaleDateString("en-US", { weekday: "short" })} ${dd.getMonth() + 1}/${dd.getDate()}`;
+            if (!confirm(`Remove ${c.truck_unit} from ${label}?`)) { sel.value = c.stage; return; }
+            sel.disabled = true;
+            try {
+              await api(`/api/cards/${c.id}`, { method: "DELETE" });
+              await loadSchedule(state.weekStart);
+            } catch (err) {
+              alert(err.message);
+              sel.value = c.stage;
+              sel.disabled = false;
+            }
+            return;
+          }
           sel.disabled = true;
           try {
             await api(`/api/cards/${c.id}`, {
@@ -250,6 +266,7 @@ $("btn-login").addEventListener("click", async () => {
     setSignedIn(true);
     await loadTrucks();
     await loadSchedule();
+    await initOilChart();
   } catch (e) {
     showAuth(e.message, true);
   }
@@ -261,6 +278,8 @@ $("password").addEventListener("keydown", (e) => {
 
 $("btn-logout").addEventListener("click", async () => {
   try { await api("/api/auth/logout", { method: "POST" }); } catch (_) {}
+  removeOilPanel();
+  state.user = null;
   setSignedIn(false);
 });
 
@@ -444,6 +463,122 @@ async function openNotesPopover(cardId, anchor) {
   try { await refresh(); } catch (e) {
     pop.querySelector(".notes-body").innerHTML = `<div class="err">${e.message}</div>`;
   }
+}
+
+/* ---- Oil change forecast (only shown to allowed users; server enforces 403 for others) ---- */
+const oil = { chart: null, sortKey: "days", sortDir: 1 };
+const OIL_STATION = { SW: "SW", WIN: "Win", WA: "Wall", WALL: "Wall" };
+function removeOilPanel() { const p = $("oil-panel"); if (p) p.remove(); oil.chart = null; }
+function todayYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function daysUntil(ymdStr) {
+  if (!ymdStr) return null;
+  const a = new Date(todayYmd() + "T12:00:00"), b = new Date(ymdStr + "T12:00:00");
+  return Math.round((b - a) / 864e5);
+}
+function shopDayFor(dueYmd) {
+  // Latest Mon–Thu on or before the due date, but never before today.
+  const today = new Date(todayYmd() + "T12:00:00");
+  let d = dueYmd ? new Date(dueYmd + "T12:00:00") : new Date(today);
+  if (d < today) d = new Date(today);
+  const back = new Date(d);
+  while (((back.getDay() + 6) % 7) > 3) back.setDate(back.getDate() - 1);
+  if (back >= today) d = back;
+  else while (((d.getDay() + 6) % 7) > 3) d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function fmtDue(ymdStr) {
+  if (!ymdStr) return "";
+  return new Date(ymdStr + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+async function initOilChart() {
+  removeOilPanel();
+  if (!state.user || !state.user.features || !state.user.features.oil_chart) return;
+  let data;
+  try { data = await api("/api/oil-chart"); } catch (_) { return; }
+  oil.chart = data.chart;
+  const panel = document.createElement("details");
+  panel.id = "oil-panel";
+  panel.className = "panel oil-panel";
+  const anchor = document.querySelector(".weeknav");
+  anchor.parentNode.insertBefore(panel, anchor);
+  renderOilPanel();
+}
+function oilSortVal(r, key) {
+  switch (key) {
+    case "truck": return r.truck;
+    case "station": return r.station || "";
+    case "pct": return r.oil_life_used_pct ?? -1;
+    case "left": return r.miles_left ?? 1e9;
+    case "daily": return r.avg_daily_miles ?? -1;
+    default: return r.projected_due ? daysUntil(r.projected_due) : 1e9;
+  }
+}
+function renderOilPanel() {
+  const panel = $("oil-panel"); if (!panel) return;
+  const wasOpen = panel.open;
+  const ch = oil.chart;
+  if (!ch || !ch.rows || !ch.rows.length) {
+    panel.innerHTML = `<summary><strong>Oil change forecast</strong> <span class="sub">· no chart yet</span></summary>`;
+    return;
+  }
+  const withMiles = ch.rows.filter(r => r.projected_due);
+  const noMiles = ch.rows.filter(r => !r.projected_due);
+  const due2 = withMiles.filter(r => daysUntil(r.projected_due) <= 14).length;
+  const due8 = withMiles.filter(r => daysUntil(r.projected_due) <= 56).length;
+  withMiles.sort((a, b) => {
+    const x = oilSortVal(a, oil.sortKey), y = oilSortVal(b, oil.sortKey);
+    return (x < y ? -1 : x > y ? 1 : 0) * oil.sortDir || a.truck.localeCompare(b.truck);
+  });
+  noMiles.sort((a, b) => a.truck.localeCompare(b.truck));
+  const cols = [["truck", "Truck"], ["station", "Stn"], ["pct", "Oil used"], ["left", "Miles left"], ["daily", "Mi/day"], ["days", "Days left"], ["days", "Due"]];
+  const head = cols.map(([k, l], i) => i === 5 ? `<th>${l}</th>` :
+    `<th data-sort="${k}" class="sortable${oil.sortKey === k ? " sorted" : ""}">${l}${oil.sortKey === k ? (oil.sortDir > 0 ? " ▲" : " ▼") : ""}</th>`).join("") + `<th>Note</th><th></th>`;
+  const rowHtml = (r) => {
+    const dl = r.projected_due ? daysUntil(r.projected_due) : null;
+    const cls = dl === null ? "oil-nomiles" : dl <= 14 ? "oil-due2" : dl <= 56 ? "oil-due8" : "";
+    const st = OIL_STATION[String(r.station || "").toUpperCase()] || r.station || "—";
+    const daysTxt = dl === null ? "—" : dl < 0 ? `${-dl} overdue` : String(dl);
+    return `<tr class="${cls}">
+      <td class="u">${escapeHtml(r.truck)}</td>
+      <td>${st && st !== "-" ? `<span class="otag">${escapeHtml(st)}</span>` : "—"}</td>
+      <td>${r.oil_life_used_pct ?? "—"}%</td>
+      <td>${r.miles_left != null ? Number(r.miles_left).toLocaleString() : "—"}</td>
+      <td>${r.avg_daily_miles != null ? Math.round(r.avg_daily_miles) : "—"}</td>
+      <td>${daysTxt}</td>
+      <td>${r.projected_due ? fmtDue(r.projected_due) : "no recent miles"}</td>
+      <td class="note">${escapeHtml(r.note || "")}</td>
+      <td><button type="button" class="secondary oil-add" data-unit="${escapeHtml(r.truck)}" data-due="${r.projected_due || ""}">+ Schedule</button></td>
+    </tr>`;
+  };
+  panel.innerHTML = `<summary><strong>Oil change forecast</strong>
+      <span class="sub">· ${due2} due in 2 wks · ${due8} in 8 wks</span></summary>
+    <div class="sub" style="margin:6px 0">MTC data as of <strong>${fmtDue(ch.data_date)}</strong>
+      · ${(ch.interval_miles || 5000).toLocaleString()}-mile interval · days/due counted from today · visible only to you and Dan</div>
+    <div class="oil-legend"><span class="oil-due2">Due ≤ 2 weeks</span><span class="oil-due8">Due ≤ 8 weeks</span><span class="oil-nomiles">No recent miles</span></div>
+    <div class="oil-wrap"><table class="oil-table"><thead><tr>${head}</tr></thead>
+    <tbody>${withMiles.map(rowHtml).join("")}${noMiles.map(rowHtml).join("")}</tbody></table></div>`;
+  panel.open = wasOpen;
+  panel.querySelectorAll("th[data-sort]").forEach(th => th.addEventListener("click", () => {
+    const k = th.dataset.sort;
+    if (oil.sortKey === k) oil.sortDir = -oil.sortDir; else { oil.sortKey = k; oil.sortDir = (k === "pct" || k === "daily") ? -1 : 1; }
+    renderOilPanel();
+  }));
+  panel.querySelectorAll(".oil-add").forEach(btn => btn.addEventListener("click", () => {
+    const unit = btn.dataset.unit;
+    const t = state.trucks.find(x => x.unit === unit);
+    const msg = $("add-msg");
+    if (!t) { msg.textContent = `${unit} isn't on the truck list`; }
+    else {
+      $("add-truck").value = unit;
+      $("add-truck-input").value = `${unit} · ${t.station}`;
+      $("add-date").value = shopDayFor(btn.dataset.due);
+      msg.textContent = "";
+    }
+    $("btn-add").scrollIntoView({ behavior: "smooth", block: "center" });
+  }));
 }
 
 bootstrap();
