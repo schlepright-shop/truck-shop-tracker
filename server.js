@@ -239,9 +239,19 @@ app.get('/api/schedule', (req, res) => {
   }
   const daySet = new Set(days.map(d => d.date));
   const store = loadStore();
-  const cards = store.cards.filter(c => daySet.has(c.schedule_date)).map(c => ({
-    ...c, notes_count: store.notes.filter(n => n.card_id === c.id).length,
-  }));
+  const cards = store.cards.filter(c => daySet.has(c.schedule_date)).map(c => {
+    const notes = store.notes
+      .filter(n => n.card_id === c.id)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map(n => ({
+        id: n.id,
+        body: n.body,
+        initials: n.initials,
+        user: n.user,
+        created_at: n.created_at,
+      }));
+    return { ...c, notes_count: notes.length, notes };
+  });
   const prev = new Date(start); prev.setDate(prev.getDate() - 7);
   const next = new Date(start); next.setDate(next.getDate() + 7);
   res.json({ week_start: ymd(start), next_week_start: ymd(next), prev_week_start: ymd(prev),
