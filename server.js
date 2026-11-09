@@ -58,8 +58,17 @@ function loadUsersFromEnv() {
 
 const USERS = loadUsersFromEnv();
 
+// Private oil-change forecast: only these usernames may read it (server-enforced).
+const OIL_CHART_USERS = String(process.env.OIL_CHART_USERS || 'lloyd,dan')
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+const OIL_DIR = path.join(DATA, 'oil-chart');
+const OIL_LATEST = path.join(OIL_DIR, 'latest.json');
+const OIL_HISTORY = path.join(OIL_DIR, 'history');
+function canSeeOilChart(u) { return !!u && OIL_CHART_USERS.includes(u.username); }
+
 if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
 if (!fs.existsSync(NIGHTLY)) fs.mkdirSync(NIGHTLY, { recursive: true });
+if (!fs.existsSync(OIL_HISTORY)) fs.mkdirSync(OIL_HISTORY, { recursive: true });
 
 // Seed static truck list into DATA_DIR once (never overwrite runtime edits).
 for (const f of ['trucks.json']) {
@@ -191,7 +200,8 @@ app.post('/api/auth/login', (req, res) => {
   store.sessions[token] = { username: user.username, expires_at: new Date(Date.now() + 30*864e5).toISOString() };
   saveStore(store);
   setCookie(res, token);
-  res.json({ ok: true, user: { username: user.username, name: user.name, initials: user.initials, role: user.role } });
+  res.json({ ok: true, user: { username: user.username, name: user.name, initials: user.initials, role: user.role,
+    features: { oil_chart: canSeeOilChart(user) } } });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -207,7 +217,8 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   const u = requireAuth(req, res); if (!u) return;
-  res.json({ user: { username: u.username, name: u.name, initials: u.initials, role: u.role } });
+  res.json({ user: { username: u.username, name: u.name, initials: u.initials, role: u.role,
+    features: { oil_chart: canSeeOilChart(u) } } });
 });
 
 app.get('/api/trucks', (req, res) => {
@@ -348,6 +359,68 @@ app.post('/api/admin/sync-nightly', (req, res) => {
   fs.writeFileSync(path.join(dir, 'map_observations.csv'), mapCsv);
   if (devicesCsv) fs.writeFileSync(path.join(dir, 'devices.csv'), devicesCsv);
   res.json({ ok: true, night });
+});
+
+// ---- Oil change forecast (private: OIL_CHART_USERS only) ----
+const OIL_STATION = { SW: 'SW', WIN: 'Win', WA: 'Wall', WALL: 'Wall', '-': '-', '': '-' };
+function numOrNull(v) {
+  if (v === null || v === undefined || String(v).trim() === '') return null;
+  const n = Number(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+function normalizeOilRow(r) {
+  const truck = String(r.truck || '').trim();
+  if (!/^[A-Za-z0-9-]{1,20}$/.test(truck)) return null;
+  const st = String(r.station || '').trim().toUpperCase();
+  const known = trucks.find(t => t.unit === truck);
+  const due = String(r.projected_due || '').trim();
+  return {
+    truck,
+    station: known ? known.station : (OIL_STATION[st] || String(r.station || '-').slice(0, 8)),
+    oil_life_used_pct: numOrNull(r.oil_life_used_pct),
+    miles_left: numOrNull(r.miles_left),
+    avg_daily_miles: numOrNull(r.avg_daily_miles),
+    days_left: numOrNull(r.days_left),
+    projected_due: /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : null,
+    note: String(r.note || '').slice(0, 300),
+  };
+}
+
+app.post('/api/admin/oil-chart', (req, res) => {
+  const tok = req.headers['x-sync-token'] || req.query.token;
+  if (!SYNC_TOKEN || tok !== SYNC_TOKEN) return res.status(401).json({ detail: 'Unauthorized' });
+  const dataDate = String(req.body.data_date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataDate)) return res.status(400).json({ detail: 'data_date must be YYYY-MM-DD' });
+  if (!Array.isArray(req.body.rows) || !req.body.rows.length) return res.status(400).json({ detail: 'rows must be a non-empty array' });
+  if (req.body.rows.length > 2000) return res.status(400).json({ detail: 'too many rows' });
+  const rows = req.body.rows.map(normalizeOilRow).filter(Boolean);
+  if (!rows.length) return res.status(400).json({ detail: 'no valid rows' });
+  const chart = {
+    data_date: dataDate,
+    generated_at: String(req.body.generated_at || '').slice(0, 40) || null,
+    received_at: utcnow(),
+    interval_miles: numOrNull(req.body.interval_miles) || 5000,
+    source: String(req.body.source || '').slice(0, 200) || null,
+    rows,
+  };
+  const json = JSON.stringify(chart, null, 2);
+  fs.mkdirSync(OIL_HISTORY, { recursive: true });
+  fs.writeFileSync(path.join(OIL_HISTORY, `${dataDate}.json`), json);
+  const tmp = OIL_LATEST + '.tmp';
+  fs.writeFileSync(tmp, json);
+  fs.renameSync(tmp, OIL_LATEST);
+  res.json({ ok: true, data_date: dataDate, rows: rows.length });
+});
+
+app.get('/api/oil-chart', (req, res) => {
+  const u = requireAuth(req, res); if (!u) return;
+  if (!canSeeOilChart(u)) return res.status(403).json({ detail: 'Not allowed' });
+  res.setHeader('Cache-Control', 'no-store');
+  let chart = null;
+  try { chart = JSON.parse(fs.readFileSync(OIL_LATEST, 'utf8')); } catch { chart = null; }
+  let history = [];
+  try { history = fs.readdirSync(OIL_HISTORY).filter(f => /^\d{4}-\d{2}-\d{2}\.json$/.test(f)).map(f => f.slice(0, 10)).sort().reverse(); } catch {}
+  res.json({ chart, history });
 });
 
 app.use('/assets', express.static(PUBLIC));
