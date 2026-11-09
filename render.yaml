@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: shop-tracker
+    runtime: node
+    plan: starter
+    region: ohio
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATA_DIR
+        value: /var/data
+      - key: APP_PASSWORD
+        sync: false
+      - key: APP_USERS
+        sync: false
+      - key: SYNC_TOKEN
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true

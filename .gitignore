@@ -1,0 +1,13 @@
+node_modules/
+data/store.json
+data/nightly/
+data/*.db
+data/demo_*
+data/preview_*
+data/allowlist.json
+.venv/
+.env
+.env.*
+*.bak
+.DS_Store
+npm-debug.log*
