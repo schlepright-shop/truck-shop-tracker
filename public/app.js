@@ -158,6 +158,14 @@ function renderBoard(data) {
         const opts = STAGES.map(s =>
           `<option value="${s}" ${s === c.stage ? "selected" : ""}>${s}</option>`
         ).join("") + `<option value="__remove__" class="opt-remove" style="color:#dc2626">Remove from schedule</option>`;
+        const notes = Array.isArray(c.notes) ? c.notes : [];
+        const newest = notes.slice(0, 2);
+        const more = Math.max(0, (c.notes_count || notes.length) - newest.length);
+        const notesHtml = newest.length
+          ? `<div class="card-notes">${newest.map(n =>
+              `<div class="card-note">${escapeHtml(n.body)} (${escapeHtml(n.initials || "")})</div>`
+            ).join("")}${more ? `<button type="button" class="more-notes" data-act="notes-more">+${more} more</button>` : ""}</div>`
+          : "";
         el.innerHTML = `
           <div class="row-top">
             <span class="unit">${c.truck_unit}</span>
@@ -165,7 +173,8 @@ function renderBoard(data) {
             <span class="who">${c.last_initials || ""}</span>
             <button type="button" class="notes-btn" data-act="notes" title="Notes">📝${ncount ? `<span class="badge">${ncount}</span>` : ""}</button>
           </div>
-          <select class="stage-select" aria-label="Status for ${c.truck_unit}">${opts}</select>`;
+          <select class="stage-select" aria-label="Status for ${c.truck_unit}">${opts}</select>
+          ${notesHtml}`;
         const sel = el.querySelector(".stage-select");
         sel.addEventListener("change", async () => {
           const stage = sel.value;
@@ -198,10 +207,13 @@ function renderBoard(data) {
             sel.disabled = false;
           }
         });
-        el.querySelector('[data-act="notes"]').addEventListener("click", (ev) => {
+        const openNotes = (ev) => {
           ev.stopPropagation();
           openNotesPopover(c.id, ev.currentTarget);
-        });
+        };
+        el.querySelector('[data-act="notes"]').addEventListener("click", openNotes);
+        const moreBtn = el.querySelector('[data-act="notes-more"]');
+        if (moreBtn) moreBtn.addEventListener("click", openNotes);
         day.appendChild(el);
       }
       grid.appendChild(day);
@@ -433,7 +445,8 @@ async function openNotesPopover(cardId, anchor) {
         <div><span class="who">${n.initials}</span> — ${escapeHtml(n.body)}</div>
         <div class="when">${formatNY(n.created_at)}</div>
       </div>`).join("");
-    const btn = document.querySelector(`.card[data-id="${cardId}"] .notes-btn`);
+    const row = document.querySelector(`.truck-row[data-id="${cardId}"]`);
+    const btn = row && row.querySelector(".notes-btn");
     if (btn) {
       const existing = btn.querySelector(".badge");
       if (data.count) {
@@ -449,6 +462,7 @@ async function openNotesPopover(cardId, anchor) {
     try {
       await api(`/api/cards/${cardId}/notes`, { method: "POST", body: JSON.stringify({ body: text }) });
       pop.querySelector("#note-input").value = "";
+      await loadSchedule(state.weekStart);
       await refresh();
     } catch (e) { alert(e.message); }
   };
