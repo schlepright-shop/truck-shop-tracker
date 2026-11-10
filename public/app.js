@@ -1092,8 +1092,8 @@ if ("serviceWorker" in navigator) {
   if(!b) return;
   const au=new Audio("/hava-nagila.mp3");
   b.addEventListener("click",()=>{
-    if(!au.paused){au.pause();au.currentTime=0;b.textContent="🎵";return;}
-    au.currentTime=0; au.play().then(()=>{b.textContent="⏹";}).catch((e)=>{alert("Could not play the song: "+(e&&e.message||e));});
+    if(!au.paused){au.pause();au.currentTime=0;b.classList.remove("playing");return;}
+    au.currentTime=0; au.play().then(()=>{b.classList.add("playing");}).catch((e)=>{alert("Could not play the song: "+(e&&e.message||e));});
   });
-  au.addEventListener("ended",()=>{b.textContent="🎵";});
+  au.addEventListener("ended",()=>{b.classList.remove("playing");});
 })();

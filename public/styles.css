@@ -415,3 +415,7 @@ body.is-dragging {
   -webkit-user-select: none;
 }
 body.is-dragging .truck-row.draggable { cursor: grabbing; }
+
+.hava-btn { display:inline-flex; align-items:center; justify-content:center; padding:4px 10px; background:#fff; color:#0038b8; border:2px solid #0038b8; border-radius:8px; cursor:pointer; line-height:0; }
+.hava-btn.playing { background:#0038b8; color:#fff; }
+.hava-btn:active { opacity:.8; }
