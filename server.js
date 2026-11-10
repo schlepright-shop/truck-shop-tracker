@@ -100,8 +100,17 @@ const OIL_CHART_USERNAMES = allowlistUsernames(OIL_CHART_USERS);
 const SCHEDULE_USERNAMES = allowlistUsernames(SCHEDULE_USERS);
 function canSeeOilChart(u) { return !!u && OIL_CHART_USERNAMES.has(u.username); }
 function canSchedule(u) { return !!u && SCHEDULE_USERNAMES.has(u.username); }
+function canEditNote(u, note) {
+  if (!u || !note) return false;
+  if (canSchedule(u)) return true;
+  return String(note.user || '').toLowerCase() === u.username;
+}
 function scheduleForbidden(res) {
   res.status(403).json({ detail: 'Only Lloyd and Dan can schedule trucks.' });
+  return null;
+}
+function noteForbidden(res) {
+  res.status(403).json({ detail: 'You can only edit or delete your own notes.' });
   return null;
 }
 function userPayload(u) {
@@ -321,6 +330,9 @@ app.get('/api/schedule', (req, res) => {
         initials: n.initials,
         user: n.user,
         created_at: n.created_at,
+        updated_at: n.updated_at || null,
+        edited_by: n.edited_by || null,
+        edited_initials: n.edited_initials || null,
       }));
     return { ...c, notes_count: notes.length, notes };
   });
@@ -423,6 +435,52 @@ app.post('/api/cards/:cardId/notes', (req, res) => {
   res.json({ note });
 });
 
+app.patch('/api/cards/:cardId/notes/:noteId', (req, res) => {
+  const u = requireAuth(req, res); if (!u) return;
+  const text = String(
+    req.body && req.body.text != null ? req.body.text
+      : (req.body && req.body.body != null ? req.body.body : '')
+  ).trim();
+  if (!text) return res.status(400).json({ detail: 'Note cannot be empty; delete it instead.' });
+  const store = loadStore();
+  const card = store.cards.find(c => c.id === req.params.cardId);
+  if (!card) return res.status(404).json({ detail: 'Card not found' });
+  const note = store.notes.find(n => n.id === req.params.noteId && n.card_id === card.id);
+  if (!note) return res.status(404).json({ detail: 'Note not found' });
+  if (!canEditNote(u, note)) return noteForbidden(res);
+  const oldText = String(note.body || '');
+  if (oldText === text) return res.json({ note });
+  const now = utcnow();
+  note.body = text;
+  note.updated_at = now;
+  note.edited_by = u.username;
+  note.edited_initials = u.initials;
+  const detail = `Edited note: "${oldText.slice(0, 120)}" → "${text.slice(0, 120)}"`;
+  store.audit.push(makeAudit(u, card, 'note_edit', detail, {
+    note_id: note.id, old_text: oldText, new_text: text,
+  }));
+  saveStore(store);
+  res.json({ note });
+});
+
+app.delete('/api/cards/:cardId/notes/:noteId', (req, res) => {
+  const u = requireAuth(req, res); if (!u) return;
+  const store = loadStore();
+  const card = store.cards.find(c => c.id === req.params.cardId);
+  if (!card) return res.status(404).json({ detail: 'Card not found' });
+  const idx = store.notes.findIndex(n => n.id === req.params.noteId && n.card_id === card.id);
+  if (idx < 0) return res.status(404).json({ detail: 'Note not found' });
+  const note = store.notes[idx];
+  if (!canEditNote(u, note)) return noteForbidden(res);
+  const oldText = String(note.body || '');
+  store.notes.splice(idx, 1);
+  store.audit.push(makeAudit(u, card, 'note_delete', `Deleted note: "${oldText.slice(0, 200)}"`, {
+    note_id: note.id, old_text: oldText,
+  }));
+  saveStore(store);
+  res.json({ ok: true });
+});
+
 app.get('/api/lookup/:truck', (req, res) => {
   if (!requireAuth(req, res)) return;
   const truck = String(req.params.truck || '').trim();
@@ -503,7 +561,7 @@ app.get('/api/history', (req, res) => {
   }));
   // Distinct managers for the History filter UI
   const managers = USERS.map(u => ({ username: u.username, name: u.name, initials: u.initials }));
-  res.json({ events: page, total, limit, offset, managers, actions: ['created', 'updated', 'deleted', 'note'] });
+  res.json({ events: page, total, limit, offset, managers, actions: ['created', 'updated', 'deleted', 'note', 'note_edit', 'note_delete'] });
 });
 
 // ---- Admin export (SYNC_TOKEN) — no secrets / sessions / passwords ----
