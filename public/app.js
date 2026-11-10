@@ -1085,3 +1085,14 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   });
 }
+
+// Hava Nagila button: tap to play, tap again to stop
+(function(){
+  const b=document.getElementById("btn-hava"), au=document.getElementById("hava-audio");
+  if(!b||!au) return;
+  b.addEventListener("click",()=>{
+    if(!au.paused){au.pause();au.currentTime=0;b.textContent="🎵";return;}
+    au.currentTime=0; au.play().then(()=>{b.textContent="⏹";}).catch(()=>{});
+  });
+  au.addEventListener("ended",()=>{b.textContent="🎵";});
+})();

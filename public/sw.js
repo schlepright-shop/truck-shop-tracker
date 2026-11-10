@@ -1,5 +1,5 @@
 /* Shop Tracker service worker — cache app shell only; APIs always network. */
-const CACHE = 'shop-tracker-shell-v9';
+const CACHE = 'shop-tracker-shell-v10';
 const SHELL = [
   '/',
   '/manifest.webmanifest',
@@ -30,6 +30,8 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  // Let the browser handle audio directly (range requests)
+  if (url.pathname.endsWith('.mp3')) return;
   // Never cache API or mutations — live data from network
   if (url.pathname.startsWith('/api/') || event.request.method !== 'GET') {
     event.respondWith(fetch(event.request));
