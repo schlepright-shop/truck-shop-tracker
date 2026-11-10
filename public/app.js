@@ -41,16 +41,27 @@ function applySchedulePermissions() {
   if ($("m-delete")) $("m-delete").classList.toggle("hidden", !allow);
 }
 
+let inflightMutations = 0;
+
 async function api(path, opts = {}) {
-  const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
-  const res = await fetch(path, { ...opts, headers, credentials: "same-origin" });
-  let data = null;
-  try { data = await res.json(); } catch (_) {}
-  if (!res.ok) {
-    const msg = (data && (data.detail || data.error)) || res.statusText;
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  const method = String((opts && opts.method) || "GET").toUpperCase();
+  const isMutation = method !== "GET";
+  if (isMutation) inflightMutations++;
+  try {
+    const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    const res = await fetch(path, { ...opts, headers, credentials: "same-origin" });
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      const msg = (data && (data.detail || data.error)) || res.statusText;
+      const err = new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  } finally {
+    if (isMutation) inflightMutations--;
   }
-  return data;
 }
 
 function showAuth(msg, isErr) {
@@ -74,6 +85,7 @@ async function bootstrap() {
     await loadTrucks();
     await loadSchedule();
     await initOilChart();
+    startPolling();
   } catch (e) {
     setSignedIn(false);
   }
@@ -142,9 +154,47 @@ function fmtRange(days) {
   return `${fa} – ${fb}`;
 }
 
-async function loadSchedule(weekStart) {
-  const q = weekStart ? `?week_start=${weekStart}` : "";
-  const data = await api(`/api/schedule${q}`);
+let lastScheduleJson = "";
+let scheduleFetchGen = 0;
+let pollTimer = null;
+let pollInFlight = false;
+let busyRetryTimer = null;
+const POLL_MS = 30000;
+
+function isBusyForRefresh() {
+  if (inflightMutations > 0) return true;
+  if (drag.active || drag.pending) return true;
+  if (document.querySelector(".note-editing")) return true;
+  const modal = $("modal");
+  if (modal && !modal.classList.contains("hidden")) return true;
+  const ae = document.activeElement;
+  if (ae && ae.closest) {
+    if (ae.closest(".note-editing, .notes-pop, .modal, #modal")) return true;
+    if (ae.matches && ae.matches(".stage-select, select.stage-select")) return true;
+  }
+  const menu = $("add-truck-menu");
+  if (menu && !menu.classList.contains("hidden")) return true;
+  return false;
+}
+
+function handleSessionExpired() {
+  stopPolling();
+  try { closeNotesPopover(); } catch (_) {}
+  try { closeModal(); } catch (_) {}
+  try { closeHistoryPanel(); } catch (_) {}
+  try { removeOilPanel(); } catch (_) {}
+  state.user = null;
+  state.schedule = null;
+  lastScheduleJson = "";
+  applySchedulePermissions();
+  setSignedIn(false);
+}
+
+function applyScheduleData(data) {
+  const scrollX = window.scrollX || 0;
+  const scrollY = window.scrollY || 0;
+  const openCardId = (openPop && openPop.dataset && openPop.dataset.cardId) || null;
+
   state.schedule = data;
   state.weekStart = data.week_start;
   $("range-label").textContent = fmtRange(data.days);
@@ -154,6 +204,78 @@ async function loadSchedule(weekStart) {
     const next = data.days.find(d => d.date >= today) || data.days[0];
     $("add-date").value = next.date;
   }
+
+  try { window.scrollTo(scrollX, scrollY); } catch (_) {}
+
+  if (openCardId) {
+    const row = document.querySelector(`.truck-row[data-id="${openCardId}"]`);
+    const btn = row && row.querySelector(".notes-btn");
+    if (btn) openNotesPopover(openCardId, btn);
+    else closeNotesPopover();
+  }
+}
+
+async function loadSchedule(weekStart) {
+  const gen = ++scheduleFetchGen;
+  const q = weekStart ? `?week_start=${weekStart}` : "";
+  const data = await api(`/api/schedule${q}`);
+  if (gen !== scheduleFetchGen) return;
+  lastScheduleJson = JSON.stringify(data);
+  applyScheduleData(data);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (busyRetryTimer) { clearTimeout(busyRetryTimer); busyRetryTimer = null; }
+}
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    refreshSchedule();
+  }, POLL_MS);
+}
+
+function retryRefreshSoon() {
+  if (busyRetryTimer) return;
+  busyRetryTimer = setTimeout(() => {
+    busyRetryTimer = null;
+    refreshSchedule();
+  }, 1000);
+}
+
+async function refreshSchedule() {
+  if (!state.user) return;
+  if (typeof document !== "undefined" && document.hidden) return;
+  if (isBusyForRefresh()) { retryRefreshSoon(); return; }
+  if (pollInFlight) return;
+  pollInFlight = true;
+  const gen = ++scheduleFetchGen;
+  try {
+    const q = state.weekStart ? `?week_start=${state.weekStart}` : "";
+    const data = await api(`/api/schedule${q}`);
+    if (gen !== scheduleFetchGen) return;
+    if (isBusyForRefresh()) { retryRefreshSoon(); return; }
+    const json = JSON.stringify(data);
+    if (json === lastScheduleJson) return;
+    lastScheduleJson = json;
+    applyScheduleData(data);
+  } catch (e) {
+    if (e && e.status === 401) {
+      handleSessionExpired();
+      return;
+    }
+    // Network / transient errors: ignore and retry on the next tick or interval.
+  } finally {
+    pollInFlight = false;
+  }
+}
+
+function onPollTrigger() {
+  if (!state.user) return;
+  if (typeof document !== "undefined" && document.hidden) return;
+  refreshSchedule();
 }
 
 function renderBoard(data) {
@@ -559,6 +681,7 @@ $("btn-login").addEventListener("click", async () => {
     await loadTrucks();
     await loadSchedule();
     await initOilChart();
+    startPolling();
   } catch (e) {
     showAuth(e.message, true);
   }
@@ -570,9 +693,13 @@ $("password").addEventListener("keydown", (e) => {
 
 $("btn-logout").addEventListener("click", async () => {
   try { await api("/api/auth/logout", { method: "POST" }); } catch (_) {}
+  stopPolling();
+  closeNotesPopover();
+  closeModal();
   removeOilPanel();
   closeHistoryPanel();
   state.user = null;
+  lastScheduleJson = "";
   applySchedulePermissions();
   setSignedIn(false);
 });
@@ -762,6 +889,7 @@ async function openNotesPopover(cardId, anchor) {
   closeNotesPopover();
     const pop = document.createElement("div");
   pop.className = "notes-pop";
+  pop.dataset.cardId = cardId;
   pop.innerHTML = `<h4>Notes</h4><div class="notes-body">Loading…</div>
     <textarea id="note-input" placeholder="Add a note…"></textarea>
     <div class="pop-actions">
@@ -1077,6 +1205,12 @@ $("btn-history-load").addEventListener("click", loadHistory);
   el.addEventListener("keydown", (e) => { if (e.key === "Enter") loadHistory(); });
 });
 
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) onPollTrigger();
+});
+window.addEventListener("focus", onPollTrigger);
+window.addEventListener("online", onPollTrigger);
 
 bootstrap();
 
