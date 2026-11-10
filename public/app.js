@@ -16,6 +16,21 @@ const state = {
 
 function $(id) { return document.getElementById(id); }
 
+function canSchedule() {
+  return !!(state.user && state.user.features && state.user.features.can_schedule);
+}
+
+/** Show/hide schedule-only UI (add bar, modal move/delete). */
+function applySchedulePermissions() {
+  const allow = canSchedule();
+  const addPanel = $("add-panel");
+  if (addPanel) addPanel.classList.toggle("hidden", !allow);
+  const moveField = $("m-date") && $("m-date").closest(".field");
+  if (moveField) moveField.classList.toggle("hidden", !allow);
+  if ($("m-save")) $("m-save").classList.toggle("hidden", !allow);
+  if ($("m-delete")) $("m-delete").classList.toggle("hidden", !allow);
+}
+
 async function api(path, opts = {}) {
   const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
   const res = await fetch(path, { ...opts, headers, credentials: "same-origin" });
@@ -45,6 +60,7 @@ async function bootstrap() {
     state.user = me.user;
     $("who").textContent = `${me.user.name} (${me.user.initials})`;
     setSignedIn(true);
+    applySchedulePermissions();
     await loadTrucks();
     await loadSchedule();
     await initOilChart();
@@ -157,7 +173,9 @@ function renderBoard(data) {
         const ncount = c.notes_count || 0;
         const opts = STAGES.map(s =>
           `<option value="${s}" ${s === c.stage ? "selected" : ""}>${s}</option>`
-        ).join("") + `<option value="__remove__" class="opt-remove" style="color:#dc2626">Remove from schedule</option>`;
+        ).join("") + (canSchedule()
+          ? `<option value="__remove__" class="opt-remove" style="color:#dc2626">Remove from schedule</option>`
+          : "");
         const notes = Array.isArray(c.notes) ? c.notes : [];
         const newest = notes.slice(0, 2);
         const more = Math.max(0, (c.notes_count || notes.length) - newest.length);
@@ -276,6 +294,7 @@ $("btn-login").addEventListener("click", async () => {
     state.user = r.user;
     $("who").textContent = `${r.user.name} (${r.user.initials})`;
     setSignedIn(true);
+    applySchedulePermissions();
     await loadTrucks();
     await loadSchedule();
     await initOilChart();
@@ -293,6 +312,7 @@ $("btn-logout").addEventListener("click", async () => {
   removeOilPanel();
   closeHistoryPanel();
   state.user = null;
+  applySchedulePermissions();
   setSignedIn(false);
 });
 
@@ -565,7 +585,7 @@ function renderOilPanel() {
       <td>${daysTxt}</td>
       <td>${r.projected_due ? fmtDue(r.projected_due) : "no recent miles"}</td>
       <td class="note">${escapeHtml(r.note || "")}</td>
-      <td><button type="button" class="secondary oil-add" data-unit="${escapeHtml(r.truck)}" data-due="${r.projected_due || ""}">+ Schedule</button></td>
+      <td>${canSchedule() ? `<button type="button" class="secondary oil-add" data-unit="${escapeHtml(r.truck)}" data-due="${r.projected_due || ""}">+ Schedule</button>` : ""}</td>
     </tr>`;
   };
   panel.innerHTML = `<summary><strong>Oil change forecast</strong>

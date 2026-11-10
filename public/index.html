@@ -8,14 +8,17 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Shop Tracker" />
-  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <title>Truck Shop Tracker · Schlep Right</title>
   <link rel="stylesheet" href="/assets/styles.css" />
 </head>
 <body>
   <div id="auth" class="auth-wrap">
     <div class="auth-card">
-      <h1>Truck Shop Tracker</h1>
+      <img class="brand-logo brand-logo-auth" src="/logo.png" alt="Schlep Right" width="200" height="99" />
+      <h1 class="sr-only">Truck Shop Tracker</h1>
       <p class="sub">East Windsor shop · managers only</p>
       <div class="field">
         <label for="username">First name</label>
@@ -33,8 +36,9 @@
 
   <div id="app" class="app hidden">
     <div class="topbar">
-      <div>
-        <h1>Truck Shop Tracker</h1>
+      <div class="brand">
+        <img class="brand-logo" src="/logo.png" alt="Schlep Right" width="160" height="79" />
+        <h1 class="sr-only">Truck Shop Tracker</h1>
         <div class="sub">East Windsor maintenance · Mon–Thu · 2 weeks</div>
       </div>
       <div class="userpill">
@@ -46,7 +50,7 @@
 
     <div id="test-banner" class="test-banner hidden">TEST DATA — sample schedule cards for demo</div>
 
-    <div class="panel">
+    <div id="add-panel" class="panel">
       <strong>Add to schedule</strong>
       <div class="row" style="margin-top:8px">
         <div class="grow combobox-wrap">

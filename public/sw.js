@@ -1,10 +1,16 @@
 /* Shop Tracker service worker — cache app shell only; APIs always network. */
-const CACHE = 'shop-tracker-shell-v6';
+const CACHE = 'shop-tracker-shell-v7';
 const SHELL = [
   '/',
   '/manifest.webmanifest',
   '/assets/styles.css',
   '/assets/app.js',
+  '/logo.png',
+  '/favicon.ico',
+  '/favicon-32.png',
+  '/apple-touch-icon.png',
+  '/icon-192.png',
+  '/icon-512.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/apple-touch-icon.png',
