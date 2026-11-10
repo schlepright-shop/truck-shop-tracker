@@ -310,3 +310,6 @@ label { font-size: .8rem; color: var(--muted); display: block; margin-bottom: 4p
 .history-item .hist-sched { color: var(--muted); font-weight: 500; font-size: .78rem; }
 .history-item.hist-deleted .hist-detail { color: var(--danger); }
 .history-item.hist-note .hist-detail { color: #92400e; }
+
+.home-link { display: inline-block; line-height: 0; -webkit-tap-highlight-color: transparent; }
+.home-link:active .brand-logo { opacity: .7; }
