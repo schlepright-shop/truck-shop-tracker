@@ -1088,11 +1088,12 @@ if ("serviceWorker" in navigator) {
 
 // Hava Nagila button: tap to play, tap again to stop
 (function(){
-  const b=document.getElementById("btn-hava"), au=document.getElementById("hava-audio");
-  if(!b||!au) return;
+  const b=document.getElementById("btn-hava");
+  if(!b) return;
+  const au=new Audio("/hava-nagila.mp3");
   b.addEventListener("click",()=>{
     if(!au.paused){au.pause();au.currentTime=0;b.textContent="🎵";return;}
-    au.currentTime=0; au.play().then(()=>{b.textContent="⏹";}).catch(()=>{});
+    au.currentTime=0; au.play().then(()=>{b.textContent="⏹";}).catch((e)=>{alert("Could not play the song: "+(e&&e.message||e));});
   });
   au.addEventListener("ended",()=>{b.textContent="🎵";});
 })();
