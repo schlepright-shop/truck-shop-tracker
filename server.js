@@ -92,12 +92,57 @@ const trucks = [
 ];
 
 function loadStore() {
-  try { return JSON.parse(fs.readFileSync(STORE, 'utf8')); }
-  catch { return { sessions: {}, cards: [], audit: [], notes: [] }; }
+  let s;
+  try { s = JSON.parse(fs.readFileSync(STORE, 'utf8')); }
+  catch { s = { sessions: {}, cards: [], audit: [], notes: [] }; }
+  if (!Array.isArray(s.cards)) s.cards = [];
+  if (!Array.isArray(s.audit)) s.audit = [];
+  if (!Array.isArray(s.notes)) s.notes = [];
+  if (!s.sessions || typeof s.sessions !== 'object') s.sessions = {};
+  // Backfill truck_unit / schedule_date / station onto older audit rows while the card still exists.
+  // Audit entries are never deleted.
+  let dirty = false;
+  const byId = new Map(s.cards.map(c => [c.id, c]));
+  for (const a of s.audit) {
+    if (a.truck_unit && a.schedule_date && a.station) continue;
+    const card = byId.get(a.card_id);
+    if (!card) continue;
+    if (!a.truck_unit) { a.truck_unit = card.truck_unit; dirty = true; }
+    if (!a.schedule_date) { a.schedule_date = card.schedule_date; dirty = true; }
+    if (!a.station) { a.station = card.station; dirty = true; }
+  }
+  if (dirty) saveStore(s);
+  return s;
 }
 function saveStore(s) { fs.writeFileSync(STORE, JSON.stringify(s, null, 2)); }
 function utcnow() { return new Date().toISOString().replace(/\.\d{3}Z$/, '+00:00'); }
 function id() { return crypto.randomUUID(); }
+function makeAudit(u, card, action, detail, extra) {
+  const entry = {
+    id: id(),
+    card_id: card.id,
+    truck_unit: card.truck_unit,
+    station: card.station || null,
+    schedule_date: card.schedule_date,
+    user: u.username,
+    initials: u.initials,
+    action,
+    detail: detail || '',
+    created_at: utcnow(),
+  };
+  if (extra && typeof extra === 'object') Object.assign(entry, extra);
+  return entry;
+}
+/** America/New_York calendar date YYYY-MM-DD for an ISO timestamp. */
+function etYmd(iso) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(iso));
+  } catch {
+    return String(iso || '').slice(0, 10);
+  }
+}
 function mondayOf(d) {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const day = (x.getDay() + 6) % 7;
@@ -272,7 +317,8 @@ app.post('/api/cards', (req, res) => {
   const card = { id: id(), truck_unit: unit, station: truck.station, schedule_date: ymd(d), stage: 'Scheduled',
     last_initials: u.initials, last_user: u.username, updated_at: now, created_at: now };
   store.cards.push(card);
-  store.audit.push({ id: id(), card_id: card.id, user: u.username, initials: u.initials, action: 'created', detail: `Scheduled on ${ymd(d)}`, created_at: now });
+  store.audit.push(makeAudit(u, card, 'created', `Scheduled on ${ymd(d)}`));
+  // makeAudit stamps its own created_at; keep card timestamps as `now`
   saveStore(store);
   res.json({ card });
 });
@@ -297,7 +343,7 @@ app.patch('/api/cards/:cardId', (req, res) => {
   if (!details.length) return res.json({ card });
   const now = utcnow();
   card.last_initials = u.initials; card.last_user = u.username; card.updated_at = now;
-  store.audit.push({ id: id(), card_id: card.id, user: u.username, initials: u.initials, action: 'updated', detail: details.join('; '), created_at: now });
+  store.audit.push(makeAudit(u, card, 'updated', details.join('; ')));
   saveStore(store);
   res.json({ card });
 });
@@ -308,8 +354,9 @@ app.delete('/api/cards/:cardId', (req, res) => {
   const idx = store.cards.findIndex(c => c.id === req.params.cardId);
   if (idx < 0) return res.status(404).json({ detail: 'Card not found' });
   const card = store.cards[idx];
-  store.audit.push({ id: id(), card_id: card.id, user: u.username, initials: u.initials, action: 'deleted', detail: `Removed ${card.truck_unit}`, created_at: utcnow() });
+  store.audit.push(makeAudit(u, card, 'deleted', `Removed ${card.truck_unit} from ${card.schedule_date}`));
   store.cards.splice(idx, 1);
+  // Notes for the removed card are kept; audit is never deleted.
   saveStore(store);
   res.json({ ok: true });
 });
@@ -333,11 +380,12 @@ app.post('/api/cards/:cardId/notes', (req, res) => {
   const text = String(req.body.body || '').trim();
   if (!text) return res.status(400).json({ detail: 'Note cannot be empty' });
   const store = loadStore();
-  if (!store.cards.some(c => c.id === req.params.cardId)) return res.status(404).json({ detail: 'Card not found' });
   const now = utcnow();
-  const note = { id: id(), card_id: req.params.cardId, user: u.username, initials: u.initials, body: text, created_at: now };
+  const card = store.cards.find(c => c.id === req.params.cardId);
+  if (!card) return res.status(404).json({ detail: 'Card not found' });
+  const note = { id: id(), card_id: card.id, user: u.username, initials: u.initials, body: text, created_at: now };
   store.notes.push(note);
-  store.audit.push({ id: id(), card_id: req.params.cardId, user: u.username, initials: u.initials, action: 'note', detail: text.slice(0,200), created_at: now });
+  store.audit.push(makeAudit(u, card, 'note', text.slice(0, 200)));
   saveStore(store);
   res.json({ note });
 });
@@ -369,6 +417,78 @@ app.post('/api/admin/sync-nightly', (req, res) => {
   fs.writeFileSync(path.join(dir, 'map_observations.csv'), mapCsv);
   if (devicesCsv) fs.writeFileSync(path.join(dir, 'devices.csv'), devicesCsv);
   res.json({ ok: true, night });
+});
+
+// ---- Change history (all signed-in managers) ----
+app.get('/api/history', (req, res) => {
+  if (!requireAuth(req, res)) return;
+  const store = loadStore();
+  const truckQ = String(req.query.truck || '').trim();
+  const userQ = String(req.query.user || '').trim().toLowerCase();
+  const actionQ = String(req.query.action || '').trim().toLowerCase();
+  const fromQ = String(req.query.from || '').trim();
+  const toQ = String(req.query.to || '').trim();
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit || '200'), 10) || 200, 1), 1000);
+  const offset = Math.max(parseInt(String(req.query.offset || '0'), 10) || 0, 0);
+
+  let events = store.audit.slice();
+  if (truckQ) {
+    events = events.filter(a => String(a.truck_unit || '').includes(truckQ));
+  }
+  if (userQ) {
+    events = events.filter(a =>
+      String(a.user || '').toLowerCase() === userQ ||
+      String(a.initials || '').toLowerCase() === userQ
+    );
+  }
+  if (actionQ) {
+    events = events.filter(a => String(a.action || '').toLowerCase() === actionQ);
+  }
+  if (fromQ && /^\d{4}-\d{2}-\d{2}$/.test(fromQ)) {
+    events = events.filter(a => etYmd(a.created_at) >= fromQ);
+  }
+  if (toQ && /^\d{4}-\d{2}-\d{2}$/.test(toQ)) {
+    events = events.filter(a => etYmd(a.created_at) <= toQ);
+  }
+  // Newest first; when timestamps collide (utcnow drops ms), later inserts win.
+  events = events.map((a, i) => ({ a, i })).sort((x, y) => {
+    const c = String(y.a.created_at).localeCompare(String(x.a.created_at));
+    return c || (y.i - x.i);
+  }).map(x => x.a);
+  const total = events.length;
+  const page = events.slice(offset, offset + limit).map(a => ({
+    id: a.id,
+    card_id: a.card_id,
+    truck_unit: a.truck_unit || null,
+    station: a.station || null,
+    schedule_date: a.schedule_date || null,
+    user: a.user,
+    initials: a.initials,
+    action: a.action,
+    detail: a.detail || '',
+    created_at: a.created_at,
+  }));
+  // Distinct managers for the History filter UI
+  const managers = USERS.map(u => ({ username: u.username, name: u.name, initials: u.initials }));
+  res.json({ events: page, total, limit, offset, managers, actions: ['created', 'updated', 'deleted', 'note'] });
+});
+
+// ---- Admin export (SYNC_TOKEN) — no secrets / sessions / passwords ----
+app.get('/api/admin/export', (req, res) => {
+  const tok = req.headers['x-sync-token'] || req.query.token;
+  if (!SYNC_TOKEN || tok !== SYNC_TOKEN) return res.status(401).json({ detail: 'Unauthorized' });
+  const store = loadStore();
+  let oil_chart = null;
+  try { oil_chart = JSON.parse(fs.readFileSync(OIL_LATEST, 'utf8')); } catch { oil_chart = null; }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    exported_at: utcnow(),
+    service: 'shop-tracker',
+    cards: store.cards,
+    audit: store.audit,
+    notes: store.notes,
+    oil_chart,
+  });
 });
 
 // ---- Oil change forecast (private: OIL_CHART_USERS only) ----
