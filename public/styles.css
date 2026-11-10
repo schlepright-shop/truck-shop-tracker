@@ -275,3 +275,27 @@ label { font-size: .8rem; color: var(--muted); display: block; margin-bottom: 4p
 .oil-legend .oil-due2 { background: #fee2e2; }
 .oil-legend .oil-due8 { background: #fef3c7; }
 .oil-legend .oil-nomiles { background: #f9fafb; color: var(--muted); }
+
+
+/* Change history */
+.history-panel .history-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.history-filters > * { flex: 1 1 110px; }
+.history-filters button { flex: 0 0 auto; align-self: flex-end; }
+.history-list {
+  list-style: none; padding: 0; margin: 10px 0 0;
+  max-height: 420px; overflow: auto; -webkit-overflow-scrolling: touch;
+}
+.history-item {
+  border-top: 1px solid var(--border); padding: 10px 2px; font-size: .85rem;
+}
+.history-item .hist-line {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-weight: 600;
+}
+.history-item .hist-when { color: var(--muted); font-weight: 500; font-size: .78rem; }
+.history-item .hist-truck { font-weight: 800; }
+.history-item .hist-detail { margin-top: 2px; }
+.history-item .hist-sched { color: var(--muted); font-weight: 500; font-size: .78rem; }
+.history-item.hist-deleted .hist-detail { color: var(--danger); }
+.history-item.hist-note .hist-detail { color: #92400e; }

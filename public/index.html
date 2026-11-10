@@ -39,6 +39,7 @@
       </div>
       <div class="userpill">
         <span id="who"></span>
+        <button id="btn-history" class="secondary" style="padding:4px 10px;font-size:.75rem">History</button>
         <button id="btn-logout" class="secondary" style="padding:4px 10px;font-size:.75rem">Sign out</button>
       </div>
     </div>
@@ -73,6 +74,47 @@
       <span class="s2">Dropped off</span>
       <span class="s3">Completed</span>
       <span class="s4">Picked up</span>
+    </div>
+
+    <div id="history-panel" class="panel history-panel hidden">
+      <div class="history-head">
+        <strong>Change history</strong>
+        <button type="button" id="btn-history-close" class="secondary" style="padding:4px 10px;font-size:.75rem">Close</button>
+      </div>
+      <div class="sub" style="margin:4px 0 8px">Who changed what on the schedule. Times are Eastern.</div>
+      <div class="row history-filters">
+        <div>
+          <label for="hist-truck">Truck</label>
+          <input id="hist-truck" placeholder="e.g. 322821" inputmode="numeric" />
+        </div>
+        <div>
+          <label for="hist-from">From</label>
+          <input id="hist-from" type="date" />
+        </div>
+        <div>
+          <label for="hist-to">To</label>
+          <input id="hist-to" type="date" />
+        </div>
+        <div>
+          <label for="hist-user">Manager</label>
+          <select id="hist-user">
+            <option value="">All</option>
+          </select>
+        </div>
+        <div>
+          <label for="hist-action">Action</label>
+          <select id="hist-action">
+            <option value="">All</option>
+            <option value="created">Created</option>
+            <option value="updated">Updated</option>
+            <option value="note">Note</option>
+            <option value="deleted">Removed</option>
+          </select>
+        </div>
+        <button type="button" id="btn-history-load">Show</button>
+      </div>
+      <div id="history-msg" class="sub" style="margin-top:6px"></div>
+      <ul id="history-list" class="history-list"></ul>
     </div>
 
     <div id="board"></div>

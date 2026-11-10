@@ -291,6 +291,7 @@ $("password").addEventListener("keydown", (e) => {
 $("btn-logout").addEventListener("click", async () => {
   try { await api("/api/auth/logout", { method: "POST" }); } catch (_) {}
   removeOilPanel();
+  closeHistoryPanel();
   state.user = null;
   setSignedIn(false);
 });
@@ -540,8 +541,8 @@ function renderOilPanel() {
   }
   const withMiles = ch.rows.filter(r => r.projected_due);
   const noMiles = ch.rows.filter(r => !r.projected_due);
-  const due2 = withMiles.filter(r => daysUntil(r.projected_due) <= 14).length;
-  const due8 = withMiles.filter(r => daysUntil(r.projected_due) <= 56).length;
+  const due2 = withMiles.filter(r => daysUntil(r.projected_due) <= 7).length;
+  const due8 = withMiles.filter(r => daysUntil(r.projected_due) <= 21).length;
   withMiles.sort((a, b) => {
     const x = oilSortVal(a, oil.sortKey), y = oilSortVal(b, oil.sortKey);
     return (x < y ? -1 : x > y ? 1 : 0) * oil.sortDir || a.truck.localeCompare(b.truck);
@@ -552,7 +553,7 @@ function renderOilPanel() {
     `<th data-sort="${k}" class="sortable${oil.sortKey === k ? " sorted" : ""}">${l}${oil.sortKey === k ? (oil.sortDir > 0 ? " ▲" : " ▼") : ""}</th>`).join("") + `<th>Note</th><th></th>`;
   const rowHtml = (r) => {
     const dl = r.projected_due ? daysUntil(r.projected_due) : null;
-    const cls = dl === null ? "oil-nomiles" : dl <= 14 ? "oil-due2" : dl <= 56 ? "oil-due8" : "";
+    const cls = dl === null ? "oil-nomiles" : dl <= 7 ? "oil-due2" : dl <= 21 ? "oil-due8" : "";
     const st = OIL_STATION[String(r.station || "").toUpperCase()] || r.station || "—";
     const daysTxt = dl === null ? "—" : dl < 0 ? `${-dl} overdue` : String(dl);
     return `<tr class="${cls}">
@@ -568,10 +569,10 @@ function renderOilPanel() {
     </tr>`;
   };
   panel.innerHTML = `<summary><strong>Oil change forecast</strong>
-      <span class="sub">· ${due2} due in 2 wks · ${due8} in 8 wks</span></summary>
+      <span class="sub">· ${due2} due within 1 wk · ${due8} within 3 wks</span></summary>
     <div class="sub" style="margin:6px 0">MTC data as of <strong>${fmtDue(ch.data_date)}</strong>
       · ${(ch.interval_miles || 5000).toLocaleString()}-mile interval · days/due counted from today · visible only to you and Dan</div>
-    <div class="oil-legend"><span class="oil-due2">Due ≤ 2 weeks</span><span class="oil-due8">Due ≤ 8 weeks</span><span class="oil-nomiles">No recent miles</span></div>
+    <div class="oil-legend"><span class="oil-due2">Due within 1 week</span><span class="oil-due8">Due within 3 weeks</span><span class="oil-nomiles">No recent miles</span></div>
     <div class="oil-wrap"><table class="oil-table"><thead><tr>${head}</tr></thead>
     <tbody>${withMiles.map(rowHtml).join("")}${noMiles.map(rowHtml).join("")}</tbody></table></div>`;
   panel.open = wasOpen;
@@ -594,6 +595,119 @@ function renderOilPanel() {
     $("btn-add").scrollIntoView({ behavior: "smooth", block: "center" });
   }));
 }
+
+
+/* ---- Change history (all managers) ---- */
+function ymdDaysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function fmtHistWhen(iso) {
+  try {
+    return new Date(iso).toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short", month: "numeric", day: "numeric",
+      hour: "numeric", minute: "2-digit",
+    });
+  } catch { return iso || ""; }
+}
+function fmtSchedDay(ymdStr) {
+  if (!ymdStr) return "";
+  try {
+    return new Date(ymdStr + "T12:00:00").toLocaleDateString("en-US", {
+      weekday: "short", month: "numeric", day: "numeric",
+    });
+  } catch { return ymdStr; }
+}
+function humanHistoryDetail(ev) {
+  const d = String(ev.detail || "");
+  if (ev.action === "created") return "Scheduled";
+  if (ev.action === "deleted") return "Removed from schedule";
+  if (ev.action === "note") return d ? `Note: ${d}` : "Note added";
+  if (ev.action === "updated") {
+    const stage = d.match(/stage\s+(.+?)\s*→\s*(.+?)(?:;|$)/i);
+    if (stage) return `${stage[2].trim()} (was ${stage[1].trim()})`;
+    const date = d.match(/date\s+(\d{4}-\d{2}-\d{2})\s*→\s*(\d{4}-\d{2}-\d{2})/i);
+    if (date) return `Moved to ${fmtSchedDay(date[2])} (was ${fmtSchedDay(date[1])})`;
+    return d || "Updated";
+  }
+  return d || ev.action || "";
+}
+function fillHistoryManagers(managers) {
+  const sel = $("hist-user");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">All</option>` + (managers || []).map(m =>
+    `<option value="${escapeHtml(m.username)}">${escapeHtml(m.name)} (${escapeHtml(m.initials)})</option>`
+  ).join("");
+  if (cur) sel.value = cur;
+}
+function openHistoryPanel() {
+  const panel = $("history-panel");
+  if (!panel) return;
+  panel.classList.remove("hidden");
+  if (!$("hist-from").value) $("hist-from").value = ymdDaysAgo(14);
+  if (!$("hist-to").value) $("hist-to").value = ymdDaysAgo(0);
+  loadHistory();
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function closeHistoryPanel() {
+  const panel = $("history-panel");
+  if (panel) panel.classList.add("hidden");
+}
+async function loadHistory() {
+  const list = $("history-list");
+  const msg = $("history-msg");
+  if (!list) return;
+  list.innerHTML = "";
+  msg.textContent = "Loading…";
+  const params = new URLSearchParams();
+  const truck = ($("hist-truck").value || "").trim();
+  const from = ($("hist-from").value || "").trim();
+  const to = ($("hist-to").value || "").trim();
+  const user = ($("hist-user").value || "").trim();
+  const action = ($("hist-action").value || "").trim();
+  if (truck) params.set("truck", truck);
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  if (user) params.set("user", user);
+  if (action) params.set("action", action);
+  params.set("limit", "200");
+  try {
+    const data = await api(`/api/history?${params.toString()}`);
+    fillHistoryManagers(data.managers);
+    if (!data.events.length) {
+      msg.textContent = "No matching changes.";
+      return;
+    }
+    msg.textContent = `Showing ${data.events.length} of ${data.total}`;
+    list.innerHTML = data.events.map(ev => {
+      const when = fmtHistWhen(ev.created_at);
+      const truck = ev.truck_unit || "?";
+      const stn = ev.station ? ` ${escapeHtml(ev.station)}` : "";
+      const sched = ev.schedule_date ? ` · for ${fmtSchedDay(ev.schedule_date)}` : "";
+      const what = escapeHtml(humanHistoryDetail(ev));
+      const who = escapeHtml(ev.initials || ev.user || "");
+      return `<li class="history-item hist-${escapeHtml(ev.action || "")}">
+        <div class="hist-line"><span class="hist-when">${escapeHtml(when)}</span>
+          <span class="hist-truck">${escapeHtml(truck)}${stn}</span></div>
+        <div class="hist-detail">${what} — <strong>${who}</strong><span class="hist-sched">${sched}</span></div>
+      </li>`;
+    }).join("");
+  } catch (e) {
+    msg.textContent = e.message;
+  }
+}
+$("btn-history").addEventListener("click", openHistoryPanel);
+$("btn-history-close").addEventListener("click", closeHistoryPanel);
+$("btn-history-load").addEventListener("click", loadHistory);
+["hist-truck", "hist-from", "hist-to", "hist-user", "hist-action"].forEach(id => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter") loadHistory(); });
+});
+
 
 bootstrap();
 
