@@ -61,10 +61,12 @@ const USERS = loadUsersFromEnv();
 // Private oil-change forecast: only these usernames may read it (server-enforced).
 const OIL_CHART_USERS = String(process.env.OIL_CHART_USERS || 'lloyd,dan')
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+// Only these users may create/move/remove schedule cards. Others may still change stage + notes.
+const SCHEDULE_USERS = String(process.env.SCHEDULE_USERS || 'lloyd,dan')
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 const OIL_DIR = path.join(DATA, 'oil-chart');
 const OIL_LATEST = path.join(OIL_DIR, 'latest.json');
 const OIL_HISTORY = path.join(OIL_DIR, 'history');
-function canSeeOilChart(u) { return !!u && OIL_CHART_USERS.includes(u.username); }
 
 if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
 if (!fs.existsSync(NIGHTLY)) fs.mkdirSync(NIGHTLY, { recursive: true });
@@ -83,6 +85,33 @@ const STAGES = ['Scheduled', 'Dropped off', 'Completed', 'Picked up'];
 function findUser(login) {
   const key = String(login || '').trim().toLowerCase();
   return USERS.find(u => u.username === key || u.aliases.includes(key)) || null;
+}
+
+/** Resolve allowlist entries through aliases (e.g. daniel → dan). */
+function allowlistUsernames(list) {
+  const out = new Set();
+  for (const raw of list) {
+    const u = findUser(raw);
+    out.add(u ? u.username : String(raw || '').toLowerCase());
+  }
+  return out;
+}
+const OIL_CHART_USERNAMES = allowlistUsernames(OIL_CHART_USERS);
+const SCHEDULE_USERNAMES = allowlistUsernames(SCHEDULE_USERS);
+function canSeeOilChart(u) { return !!u && OIL_CHART_USERNAMES.has(u.username); }
+function canSchedule(u) { return !!u && SCHEDULE_USERNAMES.has(u.username); }
+function scheduleForbidden(res) {
+  res.status(403).json({ detail: 'Only Lloyd and Dan can schedule trucks.' });
+  return null;
+}
+function userPayload(u) {
+  return {
+    username: u.username,
+    name: u.name,
+    initials: u.initials,
+    role: u.role,
+    features: { oil_chart: canSeeOilChart(u), can_schedule: canSchedule(u) },
+  };
 }
 
 const trucksFile = JSON.parse(fs.readFileSync(path.join(DATA, 'trucks.json'), 'utf8'));
@@ -245,8 +274,7 @@ app.post('/api/auth/login', (req, res) => {
   store.sessions[token] = { username: user.username, expires_at: new Date(Date.now() + 30*864e5).toISOString() };
   saveStore(store);
   setCookie(res, token);
-  res.json({ ok: true, user: { username: user.username, name: user.name, initials: user.initials, role: user.role,
-    features: { oil_chart: canSeeOilChart(user) } } });
+  res.json({ ok: true, user: userPayload(user) });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -262,8 +290,7 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   const u = requireAuth(req, res); if (!u) return;
-  res.json({ user: { username: u.username, name: u.name, initials: u.initials, role: u.role,
-    features: { oil_chart: canSeeOilChart(u) } } });
+  res.json({ user: userPayload(u) });
 });
 
 app.get('/api/trucks', (req, res) => {
@@ -305,6 +332,7 @@ app.get('/api/schedule', (req, res) => {
 
 app.post('/api/cards', (req, res) => {
   const u = requireAuth(req, res); if (!u) return;
+  if (!canSchedule(u)) return scheduleForbidden(res);
   const unit = String(req.body.truck_unit || '').trim();
   const d = parseYmd(String(req.body.schedule_date || ''));
   if (!isShopDay(d)) return res.status(400).json({ detail: 'Shop is Mon–Thu only. Pick a Monday–Thursday date.' });
@@ -329,6 +357,10 @@ app.patch('/api/cards/:cardId', (req, res) => {
   const card = store.cards.find(c => c.id === req.params.cardId);
   if (!card) return res.status(404).json({ detail: 'Card not found' });
   const details = [];
+  // Reschedule (date / position) is schedulers only. Non-schedulers get 403 if they send
+  // schedule_date; they can still PATCH stage alone (and add notes on the notes endpoint).
+  if (req.body.schedule_date != null && !canSchedule(u)) return scheduleForbidden(res);
+  // Stage updates are allowed for every signed-in manager.
   if (req.body.stage != null) {
     if (!STAGES.includes(req.body.stage)) return res.status(400).json({ detail: `Stage must be one of ${STAGES}` });
     if (req.body.stage !== card.stage) { details.push(`stage ${card.stage} → ${req.body.stage}`); card.stage = req.body.stage; }
@@ -350,6 +382,7 @@ app.patch('/api/cards/:cardId', (req, res) => {
 
 app.delete('/api/cards/:cardId', (req, res) => {
   const u = requireAuth(req, res); if (!u) return;
+  if (!canSchedule(u)) return scheduleForbidden(res);
   const store = loadStore();
   const idx = store.cards.findIndex(c => c.id === req.params.cardId);
   if (idx < 0) return res.status(404).json({ detail: 'Card not found' });
