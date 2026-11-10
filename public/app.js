@@ -20,6 +20,16 @@ function canSchedule() {
   return !!(state.user && state.user.features && state.user.features.can_schedule);
 }
 
+function canEditNote(n) {
+  if (!state.user || !n) return false;
+  if (canSchedule()) return true;
+  return String(n.user || "").toLowerCase() === state.user.username;
+}
+
+function noteEditedSuffix(n) {
+  return (n && n.updated_at) ? ` <span class="edited-mark">(edited)</span>` : "";
+}
+
 /** Show/hide schedule-only UI (add bar, modal move/delete). */
 function applySchedulePermissions() {
   const allow = canSchedule();
@@ -165,6 +175,7 @@ function renderBoard(data) {
     for (const d of days) {
       const day = document.createElement("div");
       day.className = "day" + (d.is_today ? " today" : "");
+      day.dataset.date = d.date;
       day.innerHTML = `<div class="dh"><span>${d.label}</span><span class="wd">${d.weekday}</span></div>`;
       for (const c of (byDate[d.date] || [])) {
         const el = document.createElement("div");
@@ -180,9 +191,14 @@ function renderBoard(data) {
         const newest = notes.slice(0, 2);
         const more = Math.max(0, (c.notes_count || notes.length) - newest.length);
         const notesHtml = newest.length
-          ? `<div class="card-notes">${newest.map(n =>
-              `<div class="card-note">${escapeHtml(n.body)} (${escapeHtml(n.initials || "")})</div>`
-            ).join("")}${more ? `<button type="button" class="more-notes" data-act="notes-more">+${more} more</button>` : ""}</div>`
+          ? `<div class="card-notes">${newest.map(n => {
+              const editable = canEditNote(n);
+              const cls = "card-note" + (editable ? " editable" : "");
+              const attrs = editable
+                ? ` data-note-id="${escapeHtml(n.id)}" role="button" tabindex="0" title="Tap to edit"`
+                : "";
+              return `<div class="${cls}"${attrs}>${escapeHtml(n.body)} (${escapeHtml(n.initials || "")})${noteEditedSuffix(n)}</div>`;
+            }).join("")}${more ? `<button type="button" class="more-notes" data-act="notes-more">+${more} more</button>` : ""}</div>`
           : "";
         el.innerHTML = `
           <div class="row-top">
@@ -232,6 +248,22 @@ function renderBoard(data) {
         el.querySelector('[data-act="notes"]').addEventListener("click", openNotes);
         const moreBtn = el.querySelector('[data-act="notes-more"]');
         if (moreBtn) moreBtn.addEventListener("click", openNotes);
+        el.querySelectorAll(".card-note.editable").forEach(node => {
+          const start = (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const note = notes.find(x => x.id === node.dataset.noteId);
+            if (!note) return;
+            beginInlineNoteEdit(node, c.id, note, {
+              onDone: async () => { await loadSchedule(state.weekStart); },
+            });
+          };
+          node.addEventListener("click", start);
+          node.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter" || ev.key === " ") start(ev);
+          });
+        });
+        enableCardDrag(el, c);
         day.appendChild(el);
       }
       grid.appendChild(day);
@@ -239,6 +271,207 @@ function renderBoard(data) {
     board.appendChild(grid);
   }
   $("test-banner").classList.toggle("hidden", localStorage.getItem("st_test") !== "1");
+}
+
+/* ---- Drag truck cards between days (schedulers only) ---- */
+const LONG_PRESS_MS = 350;
+const drag = {
+  active: false,
+  pending: null,
+  ghost: null,
+  sourceEl: null,
+  card: null,
+  fromDate: null,
+  overDay: null,
+  offsetX: 0,
+  offsetY: 0,
+  pointerId: null,
+};
+
+function isDragIgnoreTarget(target) {
+  if (!target || !target.closest) return true;
+  return !!target.closest(
+    "select, button, textarea, input, a, label, .card-note, .note-editing, .note-edit-actions, .notes-pop, .more-notes"
+  );
+}
+
+function clearDropHighlights() {
+  document.querySelectorAll(".day.drop-target").forEach((d) => d.classList.remove("drop-target"));
+}
+
+function dayFromPoint(x, y) {
+  const stack = document.elementsFromPoint(x, y) || [];
+  for (const el of stack) {
+    if (el.classList && el.classList.contains("drag-ghost")) continue;
+    const day = el.closest && el.closest(".day[data-date]");
+    if (day) return day;
+  }
+  return null;
+}
+
+function cleanupDragVisual() {
+  if (drag.ghost) { drag.ghost.remove(); drag.ghost = null; }
+  if (drag.sourceEl) drag.sourceEl.classList.remove("dragging");
+  clearDropHighlights();
+  document.body.classList.remove("is-dragging");
+  drag.active = false;
+  drag.sourceEl = null;
+  drag.card = null;
+  drag.fromDate = null;
+  drag.overDay = null;
+  drag.pointerId = null;
+}
+
+function cancelPendingDrag() {
+  const p = drag.pending;
+  if (!p) return;
+  if (p.timer) clearTimeout(p.timer);
+  if (p.onMove) window.removeEventListener("pointermove", p.onMove);
+  if (p.onUp) {
+    window.removeEventListener("pointerup", p.onUp);
+    window.removeEventListener("pointercancel", p.onUp);
+  }
+  drag.pending = null;
+}
+
+function startCardDrag(clientX, clientY, pointerId) {
+  const p = drag.pending;
+  if (!p || drag.active) return;
+  if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+  const el = p.el;
+  const card = p.card;
+  drag.active = true;
+  drag.pending = null;
+  drag.sourceEl = el;
+  drag.card = card;
+  drag.fromDate = card.schedule_date;
+  drag.pointerId = pointerId;
+  el.classList.add("dragging");
+  const rect = el.getBoundingClientRect();
+  drag.offsetX = clientX - rect.left;
+  drag.offsetY = clientY - rect.top;
+  const ghost = el.cloneNode(true);
+  ghost.classList.add("drag-ghost");
+  ghost.querySelectorAll("select").forEach((sel) => { sel.disabled = true; });
+  ghost.style.width = rect.width + "px";
+  ghost.style.left = rect.left + "px";
+  ghost.style.top = rect.top + "px";
+  document.body.appendChild(ghost);
+  drag.ghost = ghost;
+  document.body.classList.add("is-dragging");
+  try { navigator.vibrate && navigator.vibrate(20); } catch (_) {}
+}
+
+function moveCardDrag(clientX, clientY) {
+  if (!drag.active) return;
+  const g = drag.ghost;
+  if (g) {
+    g.style.left = (clientX - drag.offsetX) + "px";
+    g.style.top = (clientY - drag.offsetY) + "px";
+  }
+  const day = dayFromPoint(clientX, clientY);
+  clearDropHighlights();
+  if (day) {
+    day.classList.add("drop-target");
+    drag.overDay = day;
+  } else {
+    drag.overDay = null;
+  }
+}
+
+async function finishCardDrag() {
+  if (!drag.active || !drag.card) {
+    cleanupDragVisual();
+    return;
+  }
+  const cardId = drag.card.id;
+  const fromDate = drag.fromDate;
+  const toDate = drag.overDay && drag.overDay.dataset.date;
+  // Detach listeners held on pending already cleared; callers remove their own.
+  cleanupDragVisual();
+  if (!toDate || toDate === fromDate) return;
+  try {
+    await api(`/api/cards/${cardId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ schedule_date: toDate }),
+    });
+    await loadSchedule(state.weekStart);
+  } catch (err) {
+    alert(err.message || "Could not move truck");
+    try { await loadSchedule(state.weekStart); } catch (_) {}
+  }
+}
+
+function enableCardDrag(el, card) {
+  if (!canSchedule()) return;
+  el.classList.add("draggable");
+  el.dataset.date = card.schedule_date;
+  el.title = el.title || "Drag to another day (hold on phone)";
+  el.addEventListener("pointerdown", (ev) => {
+    if (ev.isPrimary === false) return;
+    if (ev.button != null && ev.button !== 0) return;
+    if (isDragIgnoreTarget(ev.target)) return;
+    if (drag.active || drag.pending) return;
+    // Don't start a drag while a note is being edited on this card
+    if (el.querySelector(".note-editing")) return;
+
+    const isTouch = ev.pointerType === "touch" || ev.pointerType === "pen";
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    const pointerId = ev.pointerId;
+
+    const onMove = (e) => {
+      if (e.pointerId !== pointerId) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!drag.active) {
+        const dist = Math.hypot(dx, dy);
+        if (isTouch) {
+          // Finger moved before long-press → treat as scroll, cancel.
+          if (dist > 10) cancelPendingDrag();
+        } else if (dist > 6) {
+          startCardDrag(e.clientX, e.clientY, pointerId);
+          // pending cleared inside start; keep listeners
+          moveCardDrag(e.clientX, e.clientY);
+          e.preventDefault();
+        }
+      } else {
+        moveCardDrag(e.clientX, e.clientY);
+        e.preventDefault();
+      }
+    };
+    const onUp = async (e) => {
+      if (e.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      if (drag.pending && drag.pending.pointerId === pointerId) {
+        cancelPendingDrag();
+        return;
+      }
+      if (drag.active && drag.pointerId === pointerId) {
+        await finishCardDrag();
+      }
+    };
+
+    const pending = {
+      el, card, startX, startY, pointerId, isTouch,
+      timer: null, onMove, onUp,
+    };
+    drag.pending = pending;
+
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+
+    if (isTouch) {
+      pending.timer = setTimeout(() => {
+        if (!drag.pending || drag.pending.pointerId !== pointerId) return;
+        startCardDrag(startX, startY, pointerId);
+        moveCardDrag(startX, startY);
+      }, LONG_PRESS_MS);
+    }
+  });
 }
 
 function formatWhen(iso) {
@@ -258,9 +491,37 @@ async function openCard(id) {
   $("modal").classList.remove("hidden");
   try {
     const nd = await api(`/api/cards/${id}/notes`);
-    $("m-notes").innerHTML = nd.notes.length
-      ? nd.notes.map(n => `<li><strong>${n.initials}</strong> — ${n.body}<div class="when">${formatNY(n.created_at)}</div></li>`).join("")
-      : "<li>No notes yet</li>";
+    const list = $("m-notes");
+    if (!nd.notes.length) {
+      list.innerHTML = "<li>No notes yet</li>";
+    } else {
+      list.innerHTML = nd.notes.map(n => {
+        const editable = canEditNote(n);
+        const cls = editable ? "modal-note editable" : "modal-note";
+        const attrs = editable
+          ? ` data-note-id="${escapeHtml(n.id)}" role="button" tabindex="0" title="Tap to edit"`
+          : "";
+        return `<li class="${cls}"${attrs}><strong>${escapeHtml(n.initials)}</strong> — ${escapeHtml(n.body)}${noteEditedSuffix(n)}<div class="when">${formatNY(n.created_at)}</div></li>`;
+      }).join("");
+      list.querySelectorAll(".modal-note.editable").forEach(node => {
+        const start = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const note = nd.notes.find(x => x.id === node.dataset.noteId);
+          if (!note) return;
+          beginInlineNoteEdit(node, id, note, {
+            onDone: async () => {
+              await openCard(id);
+              await loadSchedule(state.weekStart);
+            },
+          });
+        };
+        node.addEventListener("click", start);
+        node.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") start(ev);
+        });
+      });
+    }
   } catch (e) {
     $("m-notes").innerHTML = `<li class="err">${e.message}</li>`;
   }
@@ -435,6 +696,65 @@ let openPop = null;
 function closeNotesPopover() {
   if (openPop) { openPop.remove(); openPop = null; }
 }
+function beginInlineNoteEdit(host, cardId, note, opts = {}) {
+  if (!host || host.dataset.editing === "1") return;
+  host.dataset.editing = "1";
+  host.classList.add("note-editing");
+  const restoreHtml = host.innerHTML;
+  host.innerHTML = `
+    <textarea class="note-edit-text" aria-label="Edit note"></textarea>
+    <div class="note-edit-actions">
+      <button type="button" class="note-save">Save</button>
+      <button type="button" class="secondary note-cancel">Cancel</button>
+      <button type="button" class="danger note-delete">Delete</button>
+    </div>`;
+  const ta = host.querySelector(".note-edit-text");
+  ta.value = note.body || "";
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  const stop = (e) => e.stopPropagation();
+  host.addEventListener("click", stop);
+  host.addEventListener("pointerdown", stop);
+  const finish = async () => {
+    if (typeof opts.onDone === "function") await opts.onDone();
+  };
+  host.querySelector(".note-cancel").addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    host.dataset.editing = "0";
+    host.classList.remove("note-editing");
+    host.innerHTML = restoreHtml;
+  });
+  host.querySelector(".note-save").addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const text = ta.value.trim();
+    if (!text) {
+      alert("Note cannot be empty. Delete it instead.");
+      return;
+    }
+    try {
+      await api(`/api/cards/${cardId}/notes/${note.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ text }),
+      });
+      await finish();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+  host.querySelector(".note-delete").addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("Delete this note?")) return;
+    try {
+      await api(`/api/cards/${cardId}/notes/${note.id}`, { method: "DELETE" });
+      await finish();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+}
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
 }
@@ -461,11 +781,38 @@ async function openNotesPopover(cardId, anchor) {
     const data = await api(`/api/cards/${cardId}/notes`);
     const body = pop.querySelector(".notes-body");
     if (!data.notes.length) body.innerHTML = `<div class="sub">No notes yet.</div>`;
-    else body.innerHTML = data.notes.map(n => `
-      <div class="note">
-        <div><span class="who">${n.initials}</span> — ${escapeHtml(n.body)}</div>
+    else {
+      body.innerHTML = data.notes.map(n => {
+        const editable = canEditNote(n);
+        const cls = "note" + (editable ? " editable" : "");
+        const attrs = editable
+          ? ` data-note-id="${escapeHtml(n.id)}" role="button" tabindex="0" title="Tap to edit"`
+          : "";
+        return `
+      <div class="${cls}"${attrs}>
+        <div class="note-text"><span class="who">${escapeHtml(n.initials)}</span> — ${escapeHtml(n.body)}${noteEditedSuffix(n)}</div>
         <div class="when">${formatNY(n.created_at)}</div>
-      </div>`).join("");
+      </div>`;
+      }).join("");
+      body.querySelectorAll(".note.editable").forEach(node => {
+        const start = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const note = data.notes.find(x => x.id === node.dataset.noteId);
+          if (!note) return;
+          beginInlineNoteEdit(node, cardId, note, {
+            onDone: async () => {
+              await loadSchedule(state.weekStart);
+              await refresh();
+            },
+          });
+        };
+        node.addEventListener("click", start);
+        node.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") start(ev);
+        });
+      });
+    }
     const row = document.querySelector(`.truck-row[data-id="${cardId}"]`);
     const btn = row && row.querySelector(".notes-btn");
     if (btn) {
@@ -645,6 +992,8 @@ function humanHistoryDetail(ev) {
   if (ev.action === "created") return "Scheduled";
   if (ev.action === "deleted") return "Removed from schedule";
   if (ev.action === "note") return d ? `Note: ${d}` : "Note added";
+  if (ev.action === "note_edit") return d ? d : "Note edited";
+  if (ev.action === "note_delete") return d ? d : "Note deleted";
   if (ev.action === "updated") {
     const stage = d.match(/stage\s+(.+?)\s*→\s*(.+?)(?:;|$)/i);
     if (stage) return `${stage[2].trim()} (was ${stage[1].trim()})`;

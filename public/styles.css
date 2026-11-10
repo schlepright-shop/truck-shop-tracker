@@ -313,3 +313,105 @@ label { font-size: .8rem; color: var(--muted); display: block; margin-bottom: 4p
 
 .home-link { display: inline-block; line-height: 0; -webkit-tap-highlight-color: transparent; }
 .home-link:active .brand-logo { opacity: .7; }
+
+.truck-row .card-note.editable,
+.notes-pop .note.editable,
+.modal-note.editable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  -webkit-tap-highlight-color: rgba(255,255,255,.25);
+}
+.truck-row .card-note.editable:active,
+.notes-pop .note.editable:active,
+.modal-note.editable:active {
+  opacity: .85;
+}
+.edited-mark {
+  font-size: .85em;
+  opacity: .85;
+  font-style: italic;
+  text-decoration: none;
+  font-weight: 500;
+}
+.note-editing {
+  text-decoration: none !important;
+  cursor: default !important;
+}
+.truck-row .note-editing {
+  background: rgba(0,0,0,.18);
+  border-radius: 6px;
+  padding: 6px;
+  margin-top: 4px;
+}
+.notes-pop .note.note-editing,
+.modal-note.note-editing {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px;
+}
+.note-edit-text {
+  width: 100%;
+  min-height: 64px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 16px; /* avoid iOS zoom */
+  resize: vertical;
+  box-sizing: border-box;
+  color: #111;
+  background: #fff;
+}
+.note-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.note-edit-actions button {
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: .85rem;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.note-edit-actions .note-save {
+  background: #2563eb;
+  color: #fff;
+}
+.note-edit-actions .secondary {
+  background: #e5e7eb;
+  color: #111;
+}
+.note-edit-actions .danger {
+  background: #dc2626;
+  color: #fff;
+  margin-left: auto;
+}
+
+/* Drag-and-drop schedule move (schedulers) */
+.truck-row.draggable { cursor: grab; touch-action: manipulation; }
+.truck-row.dragging { opacity: 0.35; }
+.drag-ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0.95;
+  margin: 0;
+  box-shadow: 0 14px 32px rgba(0,0,0,.35);
+  transform: scale(1.04);
+  touch-action: none;
+}
+.day.drop-target {
+  outline: 3px solid #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(37,99,235,.2);
+}
+body.is-dragging {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+body.is-dragging .truck-row.draggable { cursor: grabbing; }
