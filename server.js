@@ -336,10 +336,21 @@ app.get('/api/schedule', (req, res) => {
       }));
     return { ...c, notes_count: notes.length, notes };
   });
+  // All not-yet-picked-up cards, including dates outside the 2-week board window.
+  // Used by the oil-chart highlight so a scheduled truck stays marked no matter which weeks are shown.
+  const open_schedule = store.cards
+    .filter(c => c.stage !== 'Picked up')
+    .map(c => ({
+      truck_unit: c.truck_unit,
+      station: c.station,
+      schedule_date: c.schedule_date,
+      stage: c.stage,
+    }))
+    .sort((a, b) => a.schedule_date.localeCompare(b.schedule_date) || String(a.truck_unit).localeCompare(String(b.truck_unit)));
   const prev = new Date(start); prev.setDate(prev.getDate() - 7);
   const next = new Date(start); next.setDate(next.getDate() + 7);
   res.json({ week_start: ymd(start), next_week_start: ymd(next), prev_week_start: ymd(prev),
-    today: ymd(today), days, cards, stages: STAGES });
+    today: ymd(today), days, cards, open_schedule, stages: STAGES });
 });
 
 app.post('/api/cards', (req, res) => {
