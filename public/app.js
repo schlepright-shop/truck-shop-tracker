@@ -213,6 +213,11 @@ function applyScheduleData(data) {
     if (btn) openNotesPopover(openCardId, btn);
     else closeNotesPopover();
   }
+
+  // Re-tint the oil chart from the latest schedule (including 30s auto-refresh).
+  if ($("oil-panel") && oil.chart) {
+    try { renderOilPanel(); } catch (_) {}
+  }
 }
 
 async function loadSchedule(weekStart) {
@@ -1003,6 +1008,29 @@ function fmtDue(ymdStr) {
   if (!ymdStr) return "";
   return new Date(ymdStr + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
+/** Map truck unit → soonest not-yet-picked-up schedule card (any date, not just the visible 2 weeks). */
+function openScheduleByTruck() {
+  const sched = state.schedule || {};
+  const list = Array.isArray(sched.open_schedule) ? sched.open_schedule
+    : (Array.isArray(sched.cards) ? sched.cards : []);
+  const byTruck = new Map();
+  for (const c of list) {
+    if (!c || c.stage === "Picked up") continue;
+    const unit = String(c.truck_unit || "").trim();
+    if (!unit) continue;
+    const prev = byTruck.get(unit);
+    if (!prev || String(c.schedule_date || "") < String(prev.schedule_date || "")) byTruck.set(unit, c);
+  }
+  return byTruck;
+}
+function scheduledLabel(c) {
+  const stage = c.stage || "Scheduled";
+  if (!c.schedule_date) return stage;
+  const d = new Date(c.schedule_date + "T12:00:00");
+  if (Number.isNaN(d.getTime())) return stage;
+  const wk = d.toLocaleDateString("en-US", { weekday: "short" });
+  return `${stage} ${wk} ${d.getMonth() + 1}/${d.getDate()}`;
+}
 async function initOilChart() {
   removeOilPanel();
   if (!state.user || !state.user.features || !state.user.features.oil_chart) return;
@@ -1046,13 +1074,16 @@ function renderOilPanel() {
   const cols = [["truck", "Truck"], ["station", "Stn"], ["pct", "Oil used"], ["left", "Miles left"], ["daily", "Mi/day"], ["days", "Days left"], ["days", "Due"]];
   const head = cols.map(([k, l], i) => i === 5 ? `<th>${l}</th>` :
     `<th data-sort="${k}" class="sortable${oil.sortKey === k ? " sorted" : ""}">${l}${oil.sortKey === k ? (oil.sortDir > 0 ? " ▲" : " ▼") : ""}</th>`).join("") + `<th>Note</th><th></th>`;
+  const scheduled = openScheduleByTruck();
   const rowHtml = (r) => {
     const dl = r.projected_due ? daysUntil(r.projected_due) : null;
-    const cls = dl === null ? "oil-nomiles" : dl <= 7 ? "oil-due2" : dl <= 21 ? "oil-due8" : "";
+    const onSched = scheduled.get(String(r.truck || "").trim());
+    const cls = onSched ? "oil-scheduled" : dl === null ? "oil-nomiles" : dl <= 7 ? "oil-due2" : dl <= 21 ? "oil-due8" : "";
+    const badge = onSched ? ` <span class="oil-sched-label">${escapeHtml(scheduledLabel(onSched))}</span>` : "";
     const st = OIL_STATION[String(r.station || "").toUpperCase()] || r.station || "—";
     const daysTxt = dl === null ? "—" : dl < 0 ? `${-dl} overdue` : String(dl);
     return `<tr class="${cls}">
-      <td class="u">${escapeHtml(r.truck)}</td>
+      <td class="u">${escapeHtml(r.truck)}${badge}</td>
       <td>${st && st !== "-" ? `<span class="otag">${escapeHtml(st)}</span>` : "—"}</td>
       <td>${r.oil_life_used_pct ?? "—"}%</td>
       <td>${r.miles_left != null ? Number(r.miles_left).toLocaleString() : "—"}</td>
@@ -1067,7 +1098,7 @@ function renderOilPanel() {
       <span class="sub">· ${due2} due within 1 wk · ${due8} within 3 wks</span></summary>
     <div class="sub" style="margin:6px 0">MTC data as of <strong>${fmtDue(ch.data_date)}</strong>
       · ${(ch.interval_miles || 5000).toLocaleString()}-mile interval · days/due counted from today · visible only to you and Dan</div>
-    <div class="oil-legend"><span class="oil-due2">Due within 1 week</span><span class="oil-due8">Due within 3 weeks</span><span class="oil-nomiles">No recent miles</span></div>
+    <div class="oil-legend"><span class="oil-due2">Due within 1 week</span><span class="oil-due8">Due within 3 weeks</span><span class="oil-scheduled">On the shop schedule</span><span class="oil-nomiles">No recent miles</span></div>
     <div class="oil-wrap"><table class="oil-table"><thead><tr>${head}</tr></thead>
     <tbody>${withMiles.map(rowHtml).join("")}${noMiles.map(rowHtml).join("")}</tbody></table></div>`;
   panel.open = wasOpen;

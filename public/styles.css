@@ -285,7 +285,20 @@ label { font-size: .8rem; color: var(--muted); display: block; margin-bottom: 4p
 .oil-legend span { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
 .oil-legend .oil-due2 { background: #fee2e2; }
 .oil-legend .oil-due8 { background: #fef3c7; }
+.oil-legend .oil-scheduled { background: #dcfce7; }
 .oil-legend .oil-nomiles { background: #f9fafb; color: var(--muted); }
+.oil-table tr.oil-scheduled td { background: #dcfce7; color: inherit; }
+.oil-table .oil-sched-label {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #bbf7d0;
+  color: #166534;
+  font-size: .68rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
 
 
 /* Change history */
