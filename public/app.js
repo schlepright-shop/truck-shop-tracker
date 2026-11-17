@@ -1025,8 +1025,9 @@ function openScheduleByTruck() {
 }
 function scheduledLabel(c) {
   const stage = c.stage || "Scheduled";
-  if (!c.schedule_date) return stage;
-  const d = new Date(c.schedule_date + "T12:00:00");
+  const when = (stage !== "Scheduled" && c.stage_date) ? c.stage_date : c.schedule_date;
+  if (!when) return stage;
+  const d = new Date(when + "T12:00:00");
   if (Number.isNaN(d.getTime())) return stage;
   const wk = d.toLocaleDateString("en-US", { weekday: "short" });
   return `${stage} ${wk} ${d.getMonth() + 1}/${d.getDate()}`;

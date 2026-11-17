@@ -1,5 +1,5 @@
 /* Shop Tracker service worker — cache app shell only; APIs always network. */
-const CACHE = 'shop-tracker-shell-v14';
+const CACHE = 'shop-tracker-shell-v15';
 const SHELL = [
   '/',
   '/manifest.webmanifest',
