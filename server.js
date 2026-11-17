@@ -171,6 +171,14 @@ function makeAudit(u, card, action, detail, extra) {
   if (extra && typeof extra === 'object') Object.assign(entry, extra);
   return entry;
 }
+/** ET date when the card reached its current stage, from the entry log (audit). */
+function stageDate(store, c) {
+  if (!c.stage || c.stage === 'Scheduled') return c.schedule_date;
+  const hits = (store.audit || []).filter(a => a.card_id === c.id && a.action === 'updated'
+    && typeof a.detail === 'string' && a.detail.includes(`→ ${c.stage}`));
+  const last = hits.length ? hits[hits.length - 1].created_at : (c.updated_at || null);
+  return last ? etYmd(last) : c.schedule_date;
+}
 /** America/New_York calendar date YYYY-MM-DD for an ISO timestamp. */
 function etYmd(iso) {
   try {
@@ -345,6 +353,7 @@ app.get('/api/schedule', (req, res) => {
       station: c.station,
       schedule_date: c.schedule_date,
       stage: c.stage,
+      stage_date: stageDate(store, c),
     }))
     .sort((a, b) => a.schedule_date.localeCompare(b.schedule_date) || String(a.truck_unit).localeCompare(String(b.truck_unit)));
   const prev = new Date(start); prev.setDate(prev.getDate() - 7);
